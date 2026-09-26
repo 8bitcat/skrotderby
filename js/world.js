@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=4';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=4';
+import { CONF, CARS } from './config.js?v=5';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=5';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -105,17 +105,17 @@ function mergedSegs(path, spacing = 10, maxLen = 70) {
 
 // ---------- Textur-hjälpare ----------
 // Högupplösta PBR-texturer (Poly Haven, CC0) — ligger i textures/
-function pbr(name, rx, ry) {
+function pbr(name, rx, ry, res = '1k') {
   const L = new THREE.TextureLoader();
-  const map = L.load('textures/' + name + '_diff_1k.jpg');
+  const map = L.load('textures/' + name + '_diff_' + res + '.jpg');
   map.wrapS = map.wrapT = THREE.RepeatWrapping;
   map.repeat.set(rx, ry);
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = 8;
-  const normalMap = L.load('textures/' + name + '_nor_gl_1k.jpg');
+  map.anisotropy = 16;
+  const normalMap = L.load('textures/' + name + '_nor_gl_' + res + '.jpg');
   normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
   normalMap.repeat.set(rx, ry);
-  normalMap.anisotropy = 4;
+  normalMap.anisotropy = 8;
   return { map, normalMap };
 }
 
@@ -170,7 +170,7 @@ export function buildWorld(ctx) {
   const LC = CONF.LOBBY, AC = CONF.ARENA, SX = CONF.STAGE_X, AR = 58;
 
   // Mark — högupplöst gräs/sten-PBR
-  const grassPbr = pbr('aerial_grass_rock', WX / 9, WZ / 9);
+  const grassPbr = pbr('aerial_grass_rock', WX / 9, WZ / 9, '2k');
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WX * 2, WZ * 2),
     new THREE.MeshStandardMaterial({ ...grassPbr, color: 0x8fb573, roughness: 1 })
@@ -191,7 +191,7 @@ export function buildWorld(ctx) {
   const racePath = makePath(racePts);
 
   // Asfalt — högupplöst PBR (u längs banan bakat i UV, v-repeat = 4 tvärs)
-  const asphaltPbr = pbr('asphalt_02', 1, 4);
+  const asphaltPbr = pbr('asphalt_02', 1, 4, '2k');
   scene.add(buildRibbon(racePts, racePath, W, asphaltPbr));
 
   // Mittstreck
@@ -208,7 +208,7 @@ export function buildWorld(ctx) {
     if (Math.abs(mid.x - (SX - 110)) < 14 && mid.z > HZ - 22) return true; // kör-in-valv
     return false;
   };
-  buildWalls(ctx, scene, segs, W, { height: 2.2, thick: 0.7, skip: raceWallSkip });
+  buildWalls(ctx, scene, racePath, W, { height: 2.2, thick: 0.7, skip: raceWallSkip });
   addEdgeLines(scene, segs, W);
   addCurbs(scene, HX, HZ, R, W);
 
@@ -849,20 +849,65 @@ function segInfo(seg) {
   };
 }
 
-function buildWalls(ctx, scene, segs, width, { height, thick, skip }) {
+function buildWalls(ctx, scene, path, width, { height, thick, skip, spacing = 10, maxLen = 70 }) {
+  // VIKTIGT: öppningarna utvärderas per 10 m-steg FÖRE sammanslagning —
+  // annars murar långa segment igen grindhål och kör-in-valv.
+  const dense = resamplePath(path, spacing);
+  const n = dense.length;
   const mats = [];
-  segs.forEach((seg, si) => {
-    const s = segInfo(seg);
-    for (const side of [1, -1]) {
-      // inåt = mot banans mittpunkt (origo)
-      const inward = (s.nx * side * s.mx + s.nz * side * s.mz) < 0;
-      if (skip && skip({ x: s.mx, z: s.mz }, inward)) continue;
-      const wx = s.mx + s.nx * side * (width / 2 + thick / 2 + 0.05);
-      const wz = s.mz + s.nz * side * (width / 2 + thick / 2 + 0.05);
-      fixedBox(ctx, wx, height / 2, wz, thick / 2, height / 2, s.len / 2 + 0.4, s.yaw);
-      mats.push({ x: wx, z: wz, yaw: s.yaw, len: s.len + 0.8, seg: si });
+  let segIdx = 0;
+  const emit = (pa, pb, side) => {
+    const dx = pb.x - pa.x, dz = pb.z - pa.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1) return;
+    const nx = -dz / len, nz = dx / len;
+    const mx = (pa.x + pb.x) / 2, mz = (pa.z + pb.z) / 2;
+    const wx = mx + nx * side * (width / 2 + thick / 2 + 0.05);
+    const wz = mz + nz * side * (width / 2 + thick / 2 + 0.05);
+    const yaw = Math.atan2(dx, dz);
+    fixedBox(ctx, wx, height / 2, wz, thick / 2, height / 2, len / 2 + 0.3, yaw);
+    mats.push({ x: wx, z: wz, yaw, len: len + 0.6, seg: segIdx++ });
+  };
+  for (const side of [1, -1]) {
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        // slå ihop kollinjära bitar inom den obrutna sträckan (max maxLen)
+        let start = run[0], prev = run[0], dirx = 0, dirz = 0, len = 0;
+        for (let i = 1; i < run.length; i++) {
+          const p = run[i];
+          const dx = p.x - prev.x, dz = p.z - prev.z;
+          const dl = Math.hypot(dx, dz) || 1e-9;
+          const ndx = dx / dl, ndz = dz / dl;
+          if (len > 0 && (ndx * dirx + ndz * dirz < 0.9998 || len + dl > maxLen)) {
+            emit(start, prev, side);
+            start = prev;
+            len = 0;
+          }
+          if (len === 0) { dirx = ndx; dirz = ndz; }
+          len += dl;
+          prev = p;
+        }
+        if (len > 0) emit(start, prev, side);
+      }
+      run = [];
+    };
+    for (let i = 0; i < n; i++) {
+      const a = dense[i], b = dense[(i + 1) % n];
+      const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const dl = Math.hypot(dx, dz) || 1e-9;
+      const nx = -dz / dl, nz = dx / dl;
+      const inward = (nx * side * mx + nz * side * mz) < 0;
+      if (skip && skip({ x: mx, z: mz }, inward)) {
+        flush();
+      } else {
+        if (!run.length) run.push(a);
+        run.push(b);
+      }
     }
-  });
+    flush();
+  }
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.65 });
   const inst = new THREE.InstancedMesh(geo, mat, mats.length);

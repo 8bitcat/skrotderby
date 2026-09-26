@@ -2,6 +2,10 @@
 // ACES-tonmappning, miljöreflektioner (PMREM), himmelsgradient + moln.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 function hash(i) { return (Math.sin(i * 127.31) * 43758.5453) % 1 * 0.5 + 0.5; }
 
@@ -77,7 +81,7 @@ export function createScene() {
   const sun = new THREE.DirectionalLight(0xfff2da, 1.45);
   sun.position.set(6600, 120, 40);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
   const sc = sun.shadow.camera;
@@ -85,14 +89,23 @@ export function createScene() {
   scene.add(sun);
   scene.add(sun.target);
 
+  // Bloom får strålkastare, boost-plattor och grindljus att GLÖDA
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight), 0.32, 0.5, 0.85
+  ));
+  composer.addPass(new OutputPass());
+
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   });
 
   // Himlen följer kameran så kupolen aldrig tar slut på 13 km-rakan
-  return { renderer, scene, camera, sun, sky };
+  return { renderer, scene, camera, sun, sky, composer };
 }
 
 const MODES = [

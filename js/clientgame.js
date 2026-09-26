@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=4';
-import { buildWorld, stepGates } from './world.js?v=4';
-import { CarView } from './carview.js?v=4';
-import { Hud } from './hud.js?v=4';
+import { CONF, CARS, PROTO } from './config.js?v=5';
+import { buildWorld, stepGates } from './world.js?v=5';
+import { CarView } from './carview.js?v=5';
+import { Hud } from './hud.js?v=5';
 
 const _v = new THREE.Vector3();
 

@@ -1,8 +1,8 @@
 // Gästens bild av en bil: interpolerar värdens snapshots, släpper delar visuellt
 // och röker/brinner utifrån hälsoflaggorna. Ingen fysik körs här.
 import * as THREE from 'three';
-import { CARS } from './config.js?v=4';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=4';
+import { CARS } from './config.js?v=5';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=5';
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();

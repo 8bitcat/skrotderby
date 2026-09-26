@@ -2,8 +2,8 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=4';
-import { stepGates } from './world.js?v=4';
+import { CONF } from './config.js?v=5';
+import { stepGates } from './world.js?v=5';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -61,7 +61,12 @@ export class RaceManager {
       }
       if (z.race) {
         z.race.t += dt;
-        if (z.gatesOpen && z.race.t > 10 && z.extraGateT <= 0) z.gatesOpen = false;
+        // Stäng inte grindarna så länge deltagare står kvar i fållan (max 25 s)
+        if (z.gatesOpen && z.race.t > 10 && z.extraGateT <= 0) {
+          const kvarIFallan = [...z.race.parts.entries()].some(([c, p]) =>
+            !p.finished && !c.wrecked && !c.disposed && inAABB(z.staging, c.pos));
+          if (!kvarIFallan || z.race.t > 25) z.gatesOpen = false;
+        }
         if (z.mode === 'race') this.updateRaceMode(z, dt, doRank);
         else this.updateDerby(z);
         if (doJoin && z.race) this.joinScan(z, cars);
@@ -77,7 +82,7 @@ export class RaceManager {
     const staged = cars.filter(c => !c.wrecked && !c.disposed && !c.racing && !c.isTraffic && inAABB(z.staging, c.pos));
     if (z.race) {
       // Race pågår redan — men den som står i depån släpps in i det (grindarna öppnas en stund)
-      if (staged.length) { z.gatesOpen = true; z.extraGateT = 8; }
+      if (staged.length) { z.gatesOpen = true; z.extraGateT = 12; }
       return;
     }
     z.gridClaims.clear();
@@ -100,7 +105,7 @@ export class RaceManager {
   }
 
   enroll(z, car, late) {
-    const p = { travel: 0, lastParam: 0, idx: 0, finished: false, place: 0, offT: 0 };
+    const p = { travel: 0, lastParam: 0, idx: 0, finished: false, place: 0, offT: 0, stageT: 0 };
     if (z.mode === 'race') {
       const np = nearestParam(z, car.pos, -1);
       p.lastParam = np.param;
@@ -118,6 +123,11 @@ export class RaceManager {
     const r = z.race;
     for (const [car, p] of r.parts) {
       if (p.finished || car.wrecked || car.disposed) continue;
+      // Står man kvar i fållan efter starten åker man ur — racet ska inte vänta i evighet
+      if (inAABB(z.staging, car.pos)) {
+        p.stageT += dt;
+        if (p.stageT > 15) { this.leave(z, car, 'Du missade starten — ute ur racet'); continue; }
+      }
       const np = nearestParam(z, car.pos, p.idx);
       p.idx = np.idx;
       let d = np.param - p.lastParam;

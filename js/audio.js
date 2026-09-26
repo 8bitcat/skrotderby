@@ -43,6 +43,18 @@ export class AudioFx {
       const d = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
 
+      // Bakgrundsflik: rAF pausar men oscillatorerna spelar vidare — tysta dem,
+      // annars "hänger sig" motorbrum/musik när man byter flik
+      document.addEventListener('visibilitychange', () => {
+        if (!this.ok) return;
+        if (document.hidden) {
+          this.engGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+          this.musicGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+        } else {
+          this._applyMusicGain();
+        }
+      });
+
       this.ok = true;
     } catch { /* ljud är inte livsviktigt */ }
   }
