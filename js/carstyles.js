@@ -342,12 +342,27 @@ export function buildCarVisual(def) {
     const pipe = new THREE.Mesh(pipeGeo, chrome());
     addBody(pipe, w * 0.26, -h * 0.4, l / 2 + 0.08);
   }
+  // NASCAR: sidoavgasrör under kjolarna
+  if (!isBuggy && !civil) {
+    const sideGeo = new THREE.CylinderGeometry(0.045, 0.05, l * 0.3, 8);
+    sideGeo.rotateX(Math.PI / 2);
+    for (const side of [-1, 1]) {
+      const p = new THREE.Mesh(sideGeo, chrome());
+      addBody(p, side * (w * 0.47), -h * 0.44, l * 0.08);
+    }
+  }
 
   // --- Lossningsbara delar (ORDNINGEN = nätets bitmask!) ---
 
-  // Stötfångare fram
+  // Stötfångare fram (+ litet racenummer i fronten, NASCAR-style)
   const fb = rbox(w + 0.06, h * 0.17, 0.3, rusty ? plast(0x565b62) : chrome(), 0.06);
   lampor(fb, -0.16, 0xfff4d8, rusty);
+  if (!civil) {
+    const fd = numberDecal(nr, accent, Math.min(0.3, h * 0.2));
+    fd.rotation.y = Math.PI;
+    fd.position.z = -0.16;
+    fb.add(fd);
+  }
   addPart('stotfangareFram', fb, 0, -h * 0.24, -(l * 0.5 + 0.12), w + 0.06, h * 0.17, 0.34, 24);
 
   // Stötfångare bak
@@ -440,6 +455,10 @@ export function buildCarVisual(def) {
       rd.rotation.x = -Math.PI / 2;
       rd.position.y = 0.035;
       roof.add(rd);
+      // Vindrutebanderoll i accentfärg över takets framkant
+      const banner = rbox(w * 0.66, 0.085, 0.12, paint(def.accent ?? 0xffffff), 0.02);
+      banner.position.set(0, 0.01, -roofL / 2 - 0.02);
+      roof.add(banner);
     }
     addPart('tak', roof, 0, roofY, roofZ, w * 0.6, 0.08, roofL, 42);
   } else {

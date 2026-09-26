@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js';
-import { buildWorld, stepGates } from './world.js';
-import { CarView } from './carview.js';
-import { Hud } from './hud.js';
+import { CONF, CARS, PROTO } from './config.js?v=4';
+import { buildWorld, stepGates } from './world.js?v=4';
+import { CarView } from './carview.js?v=4';
+import { Hud } from './hud.js?v=4';
 
 const _v = new THREE.Vector3();
 
@@ -38,7 +38,8 @@ export class ClientGame {
         this.app.hud.announce('Tappade kontakten med värden 😢');
       }
     };
-    net.send({ t: 'hej', name, defId });
+    net.send({ t: 'hej', name, defId, proto: PROTO });
+    this._hejT = 9; // vakthund: får vi inget välkommen är värden trasig/gammal
   }
 
   ensureView(id, defId, name, replace = false) {
@@ -63,7 +64,13 @@ export class ClientGame {
   onData(msg) {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
+      case 'gammal': {
+        this.app.hud.announce('Värden kör en annan version — ladda om! (Ctrl+Shift+R)');
+        this.connected = false;
+        break;
+      }
       case 'valkommen': {
+        this._hejT = 0;
         this.myId = msg.dinBil;
         for (const c of msg.cars) this.ensureView(c.id, c.defId, c.name);
         // egen vy kan ha skapats innan vi visste vårt id — bygg om utan namnskylt
@@ -197,6 +204,20 @@ export class ClientGame {
   update(dt) {
     const { input, hud, audio, cam, sun } = this.app;
     this.simT += dt;
+
+    // Vakthund: värden svarade aldrig på hej → starta om (nästa försök kan bli värd)
+    if (this._hejT > 0 && this.myId < 0) {
+      this._hejT -= dt;
+      if (this._hejT <= 0) {
+        if (this.publicMode) {
+          hud.announce('Värden svarar inte — startar om …');
+          try { sessionStorage.setItem('skrotderby_auto', '1'); } catch { /* ok */ }
+          setTimeout(() => window.location.reload(), 2000);
+        } else {
+          hud.announce('Värden svarar inte 😢 — ladda om och försök igen');
+        }
+      }
+    }
     const renderT = (performance.now() / 1000) + (this.timeOffset ?? 0) - 0.13;
 
     for (const v of this.views.values()) v.update(dt, renderT, this.app.particles);

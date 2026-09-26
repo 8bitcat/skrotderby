@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js';
-import { Car, spawnY } from './vehicle.js';
-import { buildWorld } from './world.js';
-import { RaceManager } from './race.js';
-import { Bots } from './ai.js';
-import { Traffic } from './traffic.js';
-import { Hud } from './hud.js';
+import { CONF, CARS, PROTO } from './config.js?v=4';
+import { Car, spawnY } from './vehicle.js?v=4';
+import { buildWorld } from './world.js?v=4';
+import { RaceManager } from './race.js?v=4';
+import { Bots } from './ai.js?v=4';
+import { Traffic } from './traffic.js?v=4';
+import { Hud } from './hud.js?v=4';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -152,7 +152,8 @@ export class HostGame {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
       case 'hej': {
-        const defId = clamp(msg.defId | 0, 0, CARS.length - 1);
+        if ((msg.proto | 0) !== PROTO) { this.net.sendTo(id, { t: 'gammal' }); break; }
+        const defId = clamp(msg.defId | 0, 0, CONF.VALBARA - 1);
         const name = String(msg.name || 'Gäst').slice(0, 12);
         const car = this.spawnFor(id, name, defId, 4 + this.remotePlayers.size);
         this.remotePlayers.set(id, { car, padT: 0 });

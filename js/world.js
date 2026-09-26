@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js';
+import { CONF, CARS } from './config.js?v=4';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=4';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -487,7 +487,7 @@ export function buildWorld(ctx) {
 
   const pads = [];
   const displays = [];
-  CARS.forEach((def, i) => {
+  CARS.slice(0, CONF.VALBARA).forEach((def, i) => {
     const ang = (2.05 + i * 0.42);
     const px = LC.x + 44 * Math.cos(ang), pz = LC.z + 44 * Math.sin(ang);
     const slab = new THREE.Mesh(
