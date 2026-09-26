@@ -1,5 +1,25 @@
-// Renderare, ljus och jaktkamera i tredjeperson
+// Renderare, ljus, himmel och jaktkamera — uppdaterad grafik:
+// ACES-tonmappning, miljöreflektioner (PMREM), himmelsgradient + moln.
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+function hash(i) { return (Math.sin(i * 127.31) * 43758.5453) % 1 * 0.5 + 0.5; }
+
+function cloudTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 128;
+  const c = cv.getContext('2d');
+  for (const [x, y, r] of [[70, 80, 45], [120, 65, 55], [180, 82, 42], [95, 92, 38], [150, 95, 40]]) {
+    const g = c.createRadialGradient(x, y, 4, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,0.85)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 256, 128);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 export function createScene() {
   const canvas = document.getElementById('game');
@@ -8,19 +28,58 @@ export function createScene() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87b5e8);
-  scene.fog = new THREE.Fog(0x87b5e8, 180, 640);
+  scene.background = new THREE.Color(0xbcd8f5);
+  scene.fog = new THREE.Fog(0xc4dcf2, 260, 1050);
 
-  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1400);
-  camera.position.set(-80, 30, 60);
+  // Miljöreflektioner — gör billack, krom och glas levande
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  scene.environmentIntensity = 0.55;
 
-  scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x4a5b3a, 0.9));
-  const sun = new THREE.DirectionalLight(0xfff3dd, 1.6);
-  sun.position.set(80, 120, 40);
+  // Himmelskupol med gradient
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(1300, 20, 12),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: {
+        top: { value: new THREE.Color(0x3d7fd9) },
+        bot: { value: new THREE.Color(0xd8ecff) },
+      },
+      vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 bot; void main(){ float h=normalize(vP).y*0.5+0.5; gl_FragColor=vec4(mix(bot,top,pow(max(h,0.0),0.55)),1.0); }',
+    })
+  );
+  sky.frustumCulled = false;
+  scene.add(sky);
+
+  // Moln
+  const cloudTex = cloudTexture();
+  for (let i = 0; i < 16; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: cloudTex, transparent: true, opacity: 0.75, depthWrite: false, fog: false,
+    }));
+    const a = hash(i) * Math.PI * 2;
+    const r = 350 + hash(i + 40) * 550;
+    sp.position.set(Math.cos(a) * r * 1.6, 150 + hash(i + 80) * 130, Math.sin(a) * r);
+    const s = 90 + hash(i + 120) * 140;
+    sp.scale.set(s, s * 0.42, 1);
+    scene.add(sp);
+  }
+
+  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
+  camera.position.set(6440, 30, 60);
+
+  scene.add(new THREE.HemisphereLight(0xd8e8ff, 0x51653f, 0.65));
+  const sun = new THREE.DirectionalLight(0xfff2da, 1.45);
+  sun.position.set(6600, 120, 40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.02;
   const sc = sun.shadow.camera;
   sc.left = -90; sc.right = 90; sc.top = 90; sc.bottom = -90; sc.far = 400;
   scene.add(sun);
@@ -32,20 +91,22 @@ export function createScene() {
     camera.updateProjectionMatrix();
   });
 
-  return { renderer, scene, camera, sun };
+  // Himlen följer kameran så kupolen aldrig tar slut på 13 km-rakan
+  return { renderer, scene, camera, sun, sky };
 }
 
 const MODES = [
-  { d: 9, h: 3.6 },
-  { d: 14, h: 5.4 },
-  { d: 5.5, h: 2.2 },
+  { d: 9, h: 3.4 },
+  { d: 14, h: 5.2 },
+  { d: 5.5, h: 2.1 },
 ];
 
 export class ChaseCam {
-  constructor(camera) {
+  constructor(camera, sky) {
     this.camera = camera;
+    this.sky = sky;
     this.mode = 0;
-    this.pos = new THREE.Vector3(-80, 30, 60);
+    this.pos = new THREE.Vector3(6440, 30, 60);
     this.look = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._want = new THREE.Vector3();
@@ -74,11 +135,12 @@ export class ChaseCam {
     this.look.lerp(this._wl, 1 - Math.exp(-10 * dt));
     this.camera.lookAt(this.look);
 
-    const wantFov = 62 + Math.min(20, kmh * 0.085);
+    const wantFov = 62 + Math.min(22, kmh * 0.08);
     this._fov += (wantFov - this._fov) * Math.min(1, 4 * dt);
     if (Math.abs(this.camera.fov - this._fov) > 0.1) {
       this.camera.fov = this._fov;
       this.camera.updateProjectionMatrix();
     }
+    if (this.sky) this.sky.position.set(this.pos.x, 0, this.pos.z);
   }
 }

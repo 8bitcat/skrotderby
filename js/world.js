@@ -1,10 +1,12 @@
-// Världsbygget: lobbyplaza, LÅNGRACET (långa raksträckor med väggar hela vägen),
-// SKROTARENAN (derby-skål med ramp) — grafik alltid, kolliders bara när ctx.world finns (värden).
+// Världsbygget v2: MEGA-raksträckan (~13 km race), navet i öster med lobby +
+// skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
+// kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
 import { CONF, CARS } from './config.js';
 import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
 
 // ---------- Sökvägs-hjälpare (delas med race.js & ai.js) ----------
 export function makePath(pts) {
@@ -35,7 +37,7 @@ export function pathPointAt(path, param, out = {}) {
   return out;
 }
 
-function roundedRectPath(hx, hz, r, arcSeg = 9, straightSeg = 7) {
+function roundedRectPath(hx, hz, r, arcSeg = 8, straightSeg = 24) {
   const pts = [];
   const cs = [
     [hx - r, hz - r, 0],
@@ -78,7 +80,30 @@ function resamplePath(path, spacing) {
   return out;
 }
 
-// ---------- Material/textur-hjälpare ----------
+// Slår ihop kollinjära bitar → långa väggsegment på rakorna, korta i kurvorna
+function mergedSegs(path, spacing = 10, maxLen = 70) {
+  const dense = resamplePath(path, spacing);
+  const segs = [];
+  let start = dense[0], prev = dense[0], dirx = 0, dirz = 0, len = 0;
+  for (let i = 1; i <= dense.length; i++) {
+    const p = dense[i % dense.length];
+    const dx = p.x - prev.x, dz = p.z - prev.z;
+    const dl = Math.hypot(dx, dz) || 1e-9;
+    const ndx = dx / dl, ndz = dz / dl;
+    if (len > 0 && (ndx * dirx + ndz * dirz < 0.9998 || len + dl > maxLen)) {
+      segs.push({ a: start, b: prev });
+      start = prev;
+      len = 0;
+    }
+    if (len === 0) { dirx = ndx; dirz = ndz; }
+    len += dl;
+    prev = p;
+  }
+  if (len > 0.5) segs.push({ a: start, b: prev });
+  return segs;
+}
+
+// ---------- Textur-hjälpare ----------
 function canvasTex(w, h, draw, repeat) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
@@ -87,7 +112,7 @@ function canvasTex(w, h, draw, repeat) {
   tex.colorSpace = THREE.SRGBColorSpace;
   if (repeat) {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeat, repeat);
+    if (repeat !== true) tex.repeat.set(repeat[0], repeat[1]);
   }
   return tex;
 }
@@ -109,8 +134,7 @@ function stripeMat() {
 // ---------- Fysik-hjälpare ----------
 function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0) {
   if (!ctx.world) return null;
-  const e = new THREE.Euler(rotX, yaw, 0);
-  const q = new THREE.Quaternion().setFromEuler(e);
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, yaw, 0));
   const body = ctx.world.createRigidBody(
     ctx.RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
@@ -126,115 +150,148 @@ function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0) {
 // ---------- Huvudbygget ----------
 export function buildWorld(ctx) {
   const { scene } = ctx;
-  const S = 320; // världens halvbredd
+  const { WX, WZ } = CONF.WORLD;
+  const { HX, HZ, R, W } = CONF.TRACK;
+  const LC = CONF.LOBBY, AC = CONF.ARENA, SX = CONF.STAGE_X, AR = 58;
 
   // Mark
-  const grassTex = canvasTex(128, 128, (c) => {
-    c.fillStyle = '#4c7a39'; c.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 500; i++) {
-      c.fillStyle = Math.random() < 0.5 ? '#456f33' : '#548540';
-      c.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+  const grassTex = canvasTex(256, 256, (c) => {
+    c.fillStyle = '#4e7c3b'; c.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 1400; i++) {
+      c.fillStyle = ['#44702f', '#588a42', '#4a7736', '#618f4b'][i % 4];
+      c.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
     }
-  }, 90);
+    for (let i = 0; i < 26; i++) {
+      c.fillStyle = 'rgba(90,120,60,0.25)';
+      c.beginPath();
+      c.arc(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 22, 0, 7);
+      c.fill();
+    }
+  }, [WX / 5, WZ / 5]);
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(S * 2, S * 2),
+    new THREE.PlaneGeometry(WX * 2, WZ * 2),
     new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
-  fixedBox(ctx, 0, -1, 0, S, 1, S, 0, true);
+  fixedBox(ctx, 0, -1, 0, WX, 1, WZ, 0, true);
 
-  // Yttervägg runt hela världen
-  for (const [x, z, hx, hz] of [[0, -S + 4, S, 1], [0, S - 4, S, 1], [-S + 4, 0, 1, S], [S - 4, 0, 1, S]]) {
+  // Yttervägg runt världen
+  for (const [x, z, hx, hz] of [[0, -WZ + 6, WX, 1], [0, WZ - 6, WX, 1], [-WX + 6, 0, 1, WZ], [WX - 6, 0, 1, WZ]]) {
     fixedBox(ctx, x, 2.5, z, hx, 2.5, hz, 0, true);
   }
 
-  // ============ LÅNGRACET ============
-  const HX = 260, HZ = 170, R = 55, W = 24;
+  // ============ LÅNGRACET — 13 km raksträcka ============
   let racePts = roundedRectPath(HX, HZ, R);
-  racePts = rotateToNearest(racePts, 0, HZ);
+  racePts = rotateToNearest(racePts, SX, HZ);
   const racePath = makePath(racePts);
 
-  // Banans yta
-  const ribbon = buildRibbon(racePts, W, 0x33363b);
-  scene.add(ribbon);
+  // Asfalt med spårslitage
+  const asphaltTex = canvasTex(128, 64, (c) => {
+    c.fillStyle = '#2b2d32'; c.fillRect(0, 0, 128, 64);
+    for (let i = 0; i < 700; i++) {
+      c.fillStyle = ['#26282c', '#33363b', '#2e3036'][i % 3];
+      c.fillRect(Math.random() * 128, Math.random() * 64, 1.6, 1.6);
+    }
+    c.fillStyle = 'rgba(16,17,20,0.4)';
+    c.fillRect(0, 14, 128, 9);
+    c.fillRect(0, 41, 128, 9);
+  }, true);
+  scene.add(buildRibbon(racePts, racePath, W, asphaltTex));
 
-  // Mittlinje-streck
-  const dense = resamplePath(racePath, 12);
-  addDashes(scene, dense, 0.05);
+  // Mittstreck
+  const dense14 = resamplePath(racePath, 14);
+  addDashes(scene, dense14, 0.05);
 
-  // Startlinje (rutigt)
+  // Kantlinjer + väggar från sammanslagna segment
+  const segs = mergedSegs(racePath, 10, 70);
+  const raceWallSkip = (mid, inward) => {
+    if (!inward) return false;
+    if (Math.abs(mid.x - SX) < 26 && mid.z > HZ - 22) return true;        // depåöppning
+    if (Math.abs(mid.x - (SX - 110)) < 14 && mid.z > HZ - 22) return true; // kör-in-valv
+    return false;
+  };
+  buildWalls(ctx, scene, segs, W, { height: 2.2, thick: 0.7, skip: raceWallSkip });
+  addEdgeLines(scene, segs, W);
+  addCurbs(scene, HX, HZ, R, W);
+
+  // Start- och mållinje + portaler
   const startTex = canvasTex(128, 32, (c) => {
     for (let x = 0; x < 8; x++) for (let y = 0; y < 2; y++) {
       c.fillStyle = (x + y) % 2 ? '#e8e8e8' : '#111';
       c.fillRect(x * 16, y * 16, 16, 16);
     }
   });
-  const startLine = new THREE.Mesh(
-    new THREE.PlaneGeometry(W, 3),
-    new THREE.MeshStandardMaterial({ map: startTex, roughness: 0.9 })
-  );
-  startLine.rotation.x = -Math.PI / 2;
-  startLine.position.set(0, 0.06, HZ);
-  scene.add(startLine);
+  for (const lx of [SX, SX - CONF.RACE_DIST]) {
+    const line = new THREE.Mesh(
+      new THREE.PlaneGeometry(3, W),
+      new THREE.MeshStandardMaterial({ map: startTex, roughness: 0.9 })
+    );
+    line.rotation.set(-Math.PI / 2, 0, 0);
+    line.position.set(lx, 0.06, HZ);
+    scene.add(line);
+  }
+  makeArch(ctx, scene, SX, HZ, Math.PI / 2, 'START', W / 2 + 1);
+  makeArch(ctx, scene, SX - CONF.RACE_DIST, HZ, Math.PI / 2, '🏁 MÅL', W / 2 + 1);
+  makeArch(ctx, scene, SX - 110, HZ - 13, 0, 'KÖR IN — VAR MED DIREKT', 13);
 
-  // Väggar längs hela banan — öppning vid depån och vid "kör in"-valvet
-  const raceWallSkip = (mid, inward) => {
-    if (!inward) return false;
-    if (Math.abs(mid.x) < 26 && mid.z > 150) return true;   // depåöppning (söder)
-    if (Math.abs(mid.x) < 14 && mid.z < -150) return true;  // kör-in-valv (norr)
-    return false;
-  };
-  buildWallsAlong(ctx, scene, dense, W, { height: 2.2, thick: 0.7, skip: raceWallSkip });
+  // km-skyltar längs rakan
+  for (let k = 1; k <= 12; k++) {
+    makeKmSign(scene, SX - k * 1000, HZ - W / 2 - 3, k + ' km');
+  }
 
-  // Depåficka (bakom grindarna)
-  // Öppen söderut — det är ingången från lobbyn
-  fixedBox(ctx, -23, 0.8, 139, 0.4, 0.8, 19);
-  fixedBox(ctx, 23, 0.8, 139, 0.4, 0.8, 19);
+  // Depåficka (öppen söderut mot lobbyn)
+  fixedBox(ctx, SX - 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
+  fixedBox(ctx, SX + 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
   addPocketWalls(scene, [
-    [-23, 139, 0.8, 38, 0],
-    [23, 139, 0.8, 38, 0],
+    [SX - 23, HZ - 32, 0.8, 39],
+    [SX + 23, HZ - 32, 0.8, 39],
   ]);
-
-  const raceGates = makeGateRow(ctx, scene, [-20, -12, -4, 4, 12, 20].map(x => ({ x, z: 158.5, yaw: 0 })), 4);
-
+  const raceGates = makeGateRow(ctx, scene, [-20, -12, -4, 4, 12, 20].map(dx => ({ x: SX + dx, z: HZ - 12.6, yaw: 0 })), 4);
   const raceGrid = [];
-  for (const zz of [132, 140, 148]) for (const xx of [-15, -5, 5, 15]) {
-    raceGrid.push({ pos: new THREE.Vector3(xx, 0, zz), heading: Math.PI });
+  for (const zz of [HZ - 44, HZ - 34, HZ - 24]) for (const dx of [-15, -5, 5, 15]) {
+    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI });
   }
 
   const raceZone = {
     id: 'race', namn: 'LÅNGRACET', mode: 'race',
     pts: racePts, cum: racePath.cum, total: racePath.total,
-    width: W, laps: CONF.RACE_LAPS, maxT: CONF.RACE_MAX_T,
-    staging: { x0: -22, x1: 22, z0: 120, z1: 158 },
-    entry: new THREE.Vector3(0, 0, 106),
-    grid: raceGrid, gates: raceGates, gatesOpen: false, race: null,
+    width: W, raceDist: CONF.RACE_DIST, maxT: CONF.RACE_MAX_T,
+    staging: { x0: SX - 22, x1: SX + 22, z0: HZ - 52, z1: HZ - 13 },
+    entry: new THREE.Vector3(SX, 0, HZ - 64),
+    grid: raceGrid, gates: raceGates, gatesOpen: false, race: null, extraGateT: 0,
   };
 
-  // "Kör in"-valv vid norra raksträckan
-  makeArch(ctx, scene, 0, -(HZ - 12), 'KÖR IN — VAR MED DIREKT');
-
   // ============ SKROTARENAN ============
-  const AC = { x: 115, z: 0 }, AR = 58;
-
+  const dirtTex = canvasTex(128, 128, (c) => {
+    c.fillStyle = '#a8875c'; c.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 900; i++) {
+      c.fillStyle = ['#9c7c52', '#b39064', '#8f7048', '#bd9a6e'][i % 4];
+      c.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+    }
+    c.strokeStyle = 'rgba(80,60,35,0.3)';
+    for (let i = 0; i < 14; i++) {
+      c.beginPath();
+      c.arc(64, 64, 12 + i * 4, Math.random() * 6, Math.random() * 6 + 2);
+      c.stroke();
+    }
+  }, [3, 3]);
   const arenaFloor = new THREE.Mesh(
     new THREE.CircleGeometry(AR, 48),
-    new THREE.MeshStandardMaterial({ color: 0xb08d5f, roughness: 1 })
+    new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1 })
   );
   arenaFloor.rotation.x = -Math.PI / 2;
   arenaFloor.position.set(AC.x, 0.02, AC.z);
   arenaFloor.receiveShadow = true;
   scene.add(arenaFloor);
 
-  // Ringvägg (öppning i väster för grindarna)
   const arenaSegs = 48;
   const arenaMats = [];
   for (let i = 0; i < arenaSegs; i++) {
     const a = (i / arenaSegs) * Math.PI * 2;
     const deg = ((a * 180 / Math.PI) + 360) % 360;
-    if (deg > 171 && deg < 189) continue; // grindöppning västerut
+    if (deg > 171 && deg < 189) continue;
     const x = AC.x + AR * Math.cos(a), z = AC.z + AR * Math.sin(a);
     const yaw = Math.atan2(-Math.sin(a), Math.cos(a));
     const segLen = (2 * Math.PI * AR) / arenaSegs;
@@ -243,25 +300,23 @@ export function buildWorld(ctx) {
   }
   addArenaWallMeshes(scene, arenaMats);
 
-  // Grindar + depåficka väster om arenan
   const arenaGates = makeGateRow(ctx, scene, [
-    { x: AC.x - AR, z: -4.6, yaw: Math.PI / 2 },
-    { x: AC.x - AR, z: 4.6, yaw: Math.PI / 2 },
+    { x: AC.x - AR, z: AC.z - 4.6, yaw: Math.PI / 2 },
+    { x: AC.x - AR, z: AC.z + 4.6, yaw: Math.PI / 2 },
   ], 4.6);
-  // Öppen västerut — det är ingången från lobbyn
-  fixedBox(ctx, 41.5, 0.8, -12.5, 12.5, 0.8, 0.4);
-  fixedBox(ctx, 41.5, 0.8, 12.5, 12.5, 0.8, 0.4);
+  const px0 = AC.x - AR - 25;
+  fixedBox(ctx, px0 + 12.5, 0.8, -12.5, 12.5, 0.8, 0.4);
+  fixedBox(ctx, px0 + 12.5, 0.8, 12.5, 12.5, 0.8, 0.4);
   addPocketWalls(scene, [
-    [41.5, -12.5, 25, 0.8, 0],
-    [41.5, 12.5, 25, 0.8, 0],
+    [px0 + 12.5, -12.5, 25, 0.8],
+    [px0 + 12.5, 12.5, 25, 0.8],
   ]);
-
   const arenaGrid = [];
-  for (const xx of [34, 41, 48]) for (const zz of [-7, 0, 7]) {
-    arenaGrid.push({ pos: new THREE.Vector3(xx, 0, zz), heading: -Math.PI / 2 });
+  for (const dx of [4, 11, 18]) for (const zz of [-7, 0, 7]) {
+    arenaGrid.push({ pos: new THREE.Vector3(px0 + dx, 0, zz), heading: -Math.PI / 2 });
   }
 
-  // Hopp-ramp i söder — flyg in i derbyt när som helst
+  // Hopp-ramp i söder — flyg in i derbyt
   const rampAng = Math.atan(3.2 / 28);
   fixedBox(ctx, AC.x, 1.6, AC.z + AR + 14, 3.5, 0.2, 14, 0, true, rampAng);
   const rampMesh = new THREE.Mesh(
@@ -286,23 +341,28 @@ export function buildWorld(ctx) {
   const derbyZone = {
     id: 'derby', namn: 'SKROTARENAN', mode: 'derby',
     center: AC, radius: AR, maxT: CONF.DERBY_MAX_T,
-    staging: { x0: 30, x1: 54, z0: -12, z1: 12 },
-    entry: new THREE.Vector3(14, 0, 0),
-    grid: arenaGrid, gates: arenaGates, gatesOpen: false, race: null,
+    staging: { x0: px0, x1: px0 + 24, z0: -12, z1: 12 },
+    entry: new THREE.Vector3(px0 - 14, 0, 0),
+    grid: arenaGrid, gates: arenaGates, gatesOpen: false, race: null, extraGateT: 0,
   };
 
   // ============ LOBBYN ============
-  const LC = { x: -105, z: 0 };
   const plaza = new THREE.Mesh(
     new THREE.CircleGeometry(62, 48),
-    new THREE.MeshStandardMaterial({ color: 0x3c3f45, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ color: 0x35383e, roughness: 0.95 })
   );
   plaza.rotation.x = -Math.PI / 2;
   plaza.position.set(LC.x, 0.02, LC.z);
   plaza.receiveShadow = true;
   scene.add(plaza);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(56, 58, 48),
+    new THREE.MeshBasicMaterial({ color: 0xd8d3c8, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(LC.x, 0.04, LC.z);
+  scene.add(ring);
 
-  // Podier med visningsbilar + byt-plattor
   const pads = [];
   const displays = [];
   CARS.forEach((def, i) => {
@@ -310,7 +370,7 @@ export function buildWorld(ctx) {
     const px = LC.x + 44 * Math.cos(ang), pz = LC.z + 44 * Math.sin(ang);
     const slab = new THREE.Mesh(
       new THREE.BoxGeometry(5.5, 0.5, 5.5),
-      new THREE.MeshStandardMaterial({ color: 0x272a30, roughness: 0.8 })
+      new THREE.MeshStandardMaterial({ color: 0x24272d, roughness: 0.7, metalness: 0.2 })
     );
     slab.position.set(px, 0.25, pz);
     slab.castShadow = true; slab.receiveShadow = true;
@@ -323,30 +383,30 @@ export function buildWorld(ctx) {
     displays.push({ group: disp });
 
     const padX = LC.x + 35 * Math.cos(ang), padZ = LC.z + 35 * Math.sin(ang);
-    const ring = new THREE.Mesh(
+    const padRing = new THREE.Mesh(
       new THREE.RingGeometry(1.9, 2.7, 32),
       new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.7, side: THREE.DoubleSide })
     );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(padX, 0.06, padZ);
-    scene.add(ring);
-    pads.push({ pos: new THREE.Vector3(padX, 0, padZ), defId: i, def, ring });
+    padRing.rotation.x = -Math.PI / 2;
+    padRing.position.set(padX, 0.06, padZ);
+    scene.add(padRing);
+    pads.push({ pos: new THREE.Vector3(padX, 0, padZ), defId: i, def, ring: padRing });
   });
 
-  // Små ramper i lobbyn att leka på
-  for (const [rx, rz, ryaw] of [[-90, 30, 0.5], [-125, -25, -2.2]]) {
+  // Lekramper i lobbyn
+  for (const [dx, dz, ryaw] of [[15, 30, 0.5], [-20, -25, -2.2]]) {
     const rm = new THREE.Mesh(
       new THREE.BoxGeometry(6, 0.35, 12),
       new THREE.MeshStandardMaterial({ color: 0x565c64, roughness: 0.8 })
     );
-    rm.position.set(rx, 0.9, rz);
+    rm.position.set(LC.x + dx, 0.9, LC.z + dz);
     rm.rotation.set(0.22, ryaw, 0);
     rm.castShadow = true;
     scene.add(rm);
     if (ctx.world) {
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.22, ryaw, 0));
       const body = ctx.world.createRigidBody(
-        ctx.RAPIER.RigidBodyDesc.fixed().setTranslation(rx, 0.9, rz)
+        ctx.RAPIER.RigidBodyDesc.fixed().setTranslation(LC.x + dx, 0.9, LC.z + dz)
           .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       );
       const col = ctx.world.createCollider(ctx.RAPIER.ColliderDesc.cuboid(3, 0.175, 6).setFriction(0.5), body);
@@ -356,23 +416,26 @@ export function buildWorld(ctx) {
 
   // Anslagstavlor
   const boards = [
-    makeBoard(scene, 30, 140, -Math.PI / 2, 'LÅNGRACET'),
-    makeBoard(scene, 44, -18, Math.PI, 'SKROTARENAN'),
+    makeBoard(scene, SX + 32, HZ - 34, -Math.PI / 2, 'LÅNGRACET'),
+    makeBoard(scene, px0 + 12, -18, Math.PI, 'SKROTARENAN'),
     makeBoard(scene, LC.x, LC.z - 32, 0, 'SKROTDERBY'),
   ];
 
-  // Läktare (bara pynt)
-  addStands(scene, 0, HZ + 22, 0);
+  // Läktare
+  addStands(scene, SX, HZ + 22, 0);
   addStands(scene, AC.x, AC.z - AR - 14, Math.PI);
 
-  // Rekvisita — deterministisk placering (samma på värd och gäst)
+  // Träd — instansade, längs rakorna + i infältet + runt navet
+  addTrees(ctx, scene, HX, HZ, LC);
+
+  // Rekvisita — deterministisk placering
   const props = [];
   const conePos = [
-    [-88, 12], [-92, -8], [-110, 18], [-120, -12], [-98, 32], [-86, -22],
-    [-116, 28], [-126, 8], [-102, -30], [-94, 44], [-118, -30], [-108, 40],
+    [17, 12], [13, -8], [-5, 18], [-15, -12], [7, 32], [19, -22],
+    [-11, 28], [-21, 8], [3, -30], [11, 44], [-13, -30], [-3, 40],
   ];
-  conePos.forEach(([x, z]) => props.push(makeProp(ctx, scene, 'kon', x, z)));
-  const barrelPos = [[34, -18], [50, 17], [26, 6], [60, -14], [56, 22], [30, -24]];
+  conePos.forEach(([dx, dz]) => props.push(makeProp(ctx, scene, 'kon', LC.x + dx, LC.z + dz)));
+  const barrelPos = [[px0 - 4, -18], [px0 + 20, 17], [px0 - 8, 6], [px0 + 26, -16], [px0 + 24, 22], [px0 - 2, -26]];
   barrelPos.forEach(([x, z]) => props.push(makeProp(ctx, scene, 'tunna', x, z)));
 
   const lobby = {
@@ -381,7 +444,7 @@ export function buildWorld(ctx) {
     spawn(i) {
       const col = i % 4, row = Math.floor(i / 4) % 3;
       return {
-        pos: new THREE.Vector3(-72 + col * 6, 2.2, -14 + row * 7),
+        pos: new THREE.Vector3(LC.x + 33 - col * 6, 2.2, LC.z - 14 + row * 7),
         heading: Math.PI / 2,
       };
     },
@@ -432,10 +495,11 @@ function buildDisplayCar(def) {
   return group;
 }
 
-// Banans asfaltsband
-function buildRibbon(pts, width, color) {
+// Asfaltsband med UV:er (u längs banan, v tvärs)
+function buildRibbon(pts, path, width, tex) {
   const n = pts.length;
   const pos = new Float32Array(n * 2 * 3);
+  const uv = new Float32Array(n * 2 * 2);
   const idx = [];
   for (let i = 0; i < n; i++) {
     const prev = pts[(i - 1 + n) % n], next = pts[(i + 1) % n], p = pts[i];
@@ -445,20 +509,24 @@ function buildRibbon(pts, width, color) {
     const nx = -dz, nz = dx;
     pos.set([p.x + nx * width / 2, 0.03, p.z + nz * width / 2], i * 6);
     pos.set([p.x - nx * width / 2, 0.03, p.z - nz * width / 2], i * 6 + 3);
+    const u = path.cum[i] / 14;
+    uv.set([u, 0], i * 4);
+    uv.set([u, 1], i * 4 + 2);
     const a = i * 2, b = i * 2 + 1, c = ((i + 1) % n) * 2, d = ((i + 1) % n) * 2 + 1;
     idx.push(a, b, c, b, d, c);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 1, side: THREE.DoubleSide }));
   mesh.receiveShadow = true;
   return mesh;
 }
 
 function addDashes(scene, dense, y) {
-  const geo = new THREE.BoxGeometry(0.35, 0.03, 3);
+  const geo = new THREE.BoxGeometry(0.35, 0.03, 3.2);
   const mat = new THREE.MeshBasicMaterial({ color: 0xd8d8d8 });
   const inst = new THREE.InstancedMesh(geo, mat, Math.ceil(dense.length / 2));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1);
@@ -474,42 +542,133 @@ function addDashes(scene, dense, y) {
   scene.add(inst);
 }
 
-// Väggar på båda sidor om banan (instansade + kolliders)
-function buildWallsAlong(ctx, scene, dense, width, { height, thick, skip }) {
+function segInfo(seg) {
+  const dx = seg.b.x - seg.a.x, dz = seg.b.z - seg.a.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return {
+    mx: (seg.a.x + seg.b.x) / 2, mz: (seg.a.z + seg.b.z) / 2,
+    nx: -dz / len, nz: dx / len, len,
+    yaw: Math.atan2(dx, dz),
+  };
+}
+
+function buildWalls(ctx, scene, segs, width, { height, thick, skip }) {
   const mats = [];
-  const n = dense.length;
-  for (let i = 0; i < n; i++) {
-    const a = dense[i], b = dense[(i + 1) % n];
-    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz) || 1;
-    const nx = -dz / len, nz = dx / len;
-    // inåt = mot origo (banan omsluter mitten av kartan)
-    const inwardSign = (nx * mx + nz * mz) < 0 ? 1 : -1;
+  segs.forEach((seg, si) => {
+    const s = segInfo(seg);
     for (const side of [1, -1]) {
-      const inward = side === inwardSign;
-      if (skip && skip({ x: mx, z: mz }, inward)) continue;
-      const wx = mx + nx * side * (width / 2 + thick / 2 + 0.05);
-      const wz = mz + nz * side * (width / 2 + thick / 2 + 0.05);
-      const yaw = Math.atan2(dx, dz);
-      fixedBox(ctx, wx, height / 2, wz, thick / 2, height / 2, len / 2 + 0.4, yaw);
-      mats.push({ x: wx, z: wz, yaw, len: len + 0.8, height, thick, seg: i });
+      // inåt = mot banans mittpunkt (origo)
+      const inward = (s.nx * side * s.mx + s.nz * side * s.mz) < 0;
+      if (skip && skip({ x: s.mx, z: s.mz }, inward)) continue;
+      const wx = s.mx + s.nx * side * (width / 2 + thick / 2 + 0.05);
+      const wz = s.mz + s.nz * side * (width / 2 + thick / 2 + 0.05);
+      fixedBox(ctx, wx, height / 2, wz, thick / 2, height / 2, s.len / 2 + 0.4, s.yaw);
+      mats.push({ x: wx, z: wz, yaw: s.yaw, len: s.len + 0.8, seg: si });
     }
-  }
+  });
   const geo = new THREE.BoxGeometry(1, 1, 1);
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.65 });
   const inst = new THREE.InstancedMesh(geo, mat, mats.length);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const red = new THREE.Color(0xc23b2e), white = new THREE.Color(0xd8d3c8);
   mats.forEach((w, i) => {
     q.setFromAxisAngle(UP, w.yaw);
-    s.set(w.thick, w.height, w.len);
-    m.compose(new THREE.Vector3(w.x, w.height / 2, w.z), q, s);
+    sc.set(0.7, 2.2, w.len);
+    m.compose(new THREE.Vector3(w.x, 1.1, w.z), q, sc);
     inst.setMatrixAt(i, m);
     inst.setColorAt(i, w.seg % 2 ? red : white);
   });
   inst.castShadow = true;
   scene.add(inst);
+}
+
+function addEdgeLines(scene, segs, width) {
+  const geo = new THREE.BoxGeometry(0.3, 0.02, 1);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xe8e4da });
+  const inst = new THREE.InstancedMesh(geo, mat, segs.length * 2);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  let c = 0;
+  for (const seg of segs) {
+    const s = segInfo(seg);
+    for (const side of [1, -1]) {
+      q.setFromAxisAngle(UP, s.yaw);
+      sc.set(1, 1, s.len);
+      m.compose(new THREE.Vector3(
+        s.mx + s.nx * side * (width / 2 - 0.5), 0.045,
+        s.mz + s.nz * side * (width / 2 - 0.5)
+      ), q, sc);
+      inst.setMatrixAt(c++, m);
+    }
+  }
+  inst.count = c;
+  scene.add(inst);
+}
+
+// Röd/vita curbs i de fyra kurvorna
+function addCurbs(scene, hx, hz, r, width) {
+  const centers = [
+    [hx - r, hz - r, 0], [-(hx - r), hz - r, Math.PI / 2],
+    [-(hx - r), -(hz - r), Math.PI], [hx - r, -(hz - r), Math.PI * 1.5],
+  ];
+  const per = 22;
+  const geo = new THREE.BoxGeometry(1.3, 0.09, 1);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.6 });
+  const inst = new THREE.InstancedMesh(geo, mat, centers.length * per * 2);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const red = new THREE.Color(0xd23c2c), white = new THREE.Color(0xece8dd);
+  let c = 0;
+  for (const [cx, cz, a0] of centers) {
+    for (let k = 0; k < per; k++) {
+      const a = a0 + ((k + 0.5) / per) * (Math.PI / 2);
+      for (const rr of [r - width / 2 + 0.8, r + width / 2 - 0.8]) {
+        const x = cx + rr * Math.cos(a), z = cz + rr * Math.sin(a);
+        const yaw = Math.atan2(-Math.sin(a), Math.cos(a));
+        q.setFromAxisAngle(UP, yaw);
+        const chord = (Math.PI / 2 / per) * rr;
+        sc.set(1, 1, chord + 0.1);
+        m.compose(new THREE.Vector3(x, 0.045, z), q, sc);
+        inst.setMatrixAt(c, m);
+        inst.setColorAt(c, (k % 2) ? red : white);
+        c++;
+      }
+    }
+  }
+  inst.count = c;
+  scene.add(inst);
+}
+
+function addTrees(ctx, scene, hx, hz, LC) {
+  const spots = [];
+  for (let x = -6600; x <= 6600; x += 85) {
+    spots.push([x + hash(x) * 30, hz + 42 + hash(x + 1) * 30]);
+    spots.push([x + hash(x + 2) * 30, -(hz + 42 + hash(x + 3) * 30)]);
+  }
+  for (let x = -6200; x <= 5900; x += 240) {
+    spots.push([x + hash(x + 4) * 60, -60 + hash(x + 5) * 120]);
+  }
+  for (let i = 0; i < 14; i++) {
+    const a = hash(i + 9) * Math.PI * 2;
+    spots.push([LC.x + Math.cos(a) * (70 + hash(i + 30) * 40), LC.z + Math.sin(a) * (70 + hash(i + 60) * 40)]);
+  }
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 6);
+  const folGeo = new THREE.IcosahedronGeometry(1, 0);
+  const trunkInst = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 0.95 }), spots.length);
+  const folInst = new THREE.InstancedMesh(folGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), spots.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const greens = [0x3e6b2f, 0x4a7c38, 0x54883f, 0x35602a].map(c => new THREE.Color(c));
+  spots.forEach(([x, z], i) => {
+    const s = 0.8 + hash(i + 200) * 0.7;
+    q.setFromAxisAngle(UP, hash(i + 300) * 6);
+    sc.set(s, s, s);
+    m.compose(new THREE.Vector3(x, 1.3 * s, z), q, sc);
+    trunkInst.setMatrixAt(i, m);
+    sc.set(2.6 * s, 3.1 * s, 2.6 * s);
+    m.compose(new THREE.Vector3(x, 3.6 * s, z), q, sc);
+    folInst.setMatrixAt(i, m);
+    folInst.setColorAt(i, greens[i % greens.length]);
+  });
+  trunkInst.castShadow = folInst.castShadow = true;
+  scene.add(trunkInst, folInst);
 }
 
 function addArenaWallMeshes(scene, segs) {
@@ -575,28 +734,53 @@ export function stepGates(zone, dt) {
   }
 }
 
-function makeArch(ctx, scene, x, z, text) {
-  const pm = new THREE.MeshStandardMaterial({ color: 0xe88b1e, roughness: 0.6 });
-  for (const sx of [-13, 13]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 6, 0.6), pm);
-    post.position.set(x + sx, 3, z);
+function makeArch(ctx, scene, x, z, yaw, text, halfSpan = 13) {
+  const pm = new THREE.MeshStandardMaterial({ color: 0xe88b1e, roughness: 0.55, metalness: 0.3 });
+  const dirX = Math.sin(yaw + Math.PI / 2), dirZ = Math.cos(yaw + Math.PI / 2);
+  for (const s of [-halfSpan, halfSpan]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 6.5, 0.6), pm);
+    post.position.set(x + dirX * s, 3.25, z + dirZ * s);
     post.castShadow = true;
     scene.add(post);
-    fixedBox(ctx, x + sx, 3, z, 0.3, 3, 0.3);
+    fixedBox(ctx, x + dirX * s, 3.25, z + dirZ * s, 0.3, 3.25, 0.3);
   }
   const tex = canvasTex(512, 64, (c) => {
     c.fillStyle = '#20242a'; c.fillRect(0, 0, 512, 64);
     c.fillStyle = '#ffb64d';
-    c.font = 'bold 40px system-ui, sans-serif';
+    c.font = 'bold 42px system-ui, sans-serif';
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText(text, 256, 34);
   });
   const board = new THREE.Mesh(
-    new THREE.PlaneGeometry(26, 3.2),
+    new THREE.PlaneGeometry(halfSpan * 2, 3),
     new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
   );
-  board.position.set(x, 6.2, z);
+  board.position.set(x, 6.6, z);
+  board.rotation.y = yaw;
   scene.add(board);
+}
+
+function makeKmSign(scene, x, z, text) {
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 3, 6),
+    new THREE.MeshStandardMaterial({ color: 0x8a9099 })
+  );
+  pole.position.set(x, 1.5, z);
+  scene.add(pole);
+  const tex = canvasTex(128, 64, (c) => {
+    c.fillStyle = '#1c4d9e'; c.fillRect(0, 0, 128, 64);
+    c.strokeStyle = '#fff'; c.lineWidth = 5; c.strokeRect(4, 4, 120, 56);
+    c.fillStyle = '#fff';
+    c.font = 'bold 34px system-ui, sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(text, 64, 34);
+  });
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 1.2),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+  );
+  sign.position.set(x, 3.2, z);
+  scene.add(sign);
 }
 
 function makeBoard(scene, x, z, yaw, title) {
@@ -674,7 +858,7 @@ function makeProp(ctx, scene, typ, x, z) {
   } else {
     mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.42, 0.42, 0.95, 12),
-      new THREE.MeshStandardMaterial({ color: 0x2b6fb3, roughness: 0.6, metalness: 0.3 })
+      new THREE.MeshStandardMaterial({ color: 0x2b6fb3, roughness: 0.5, metalness: 0.4 })
     );
     mesh.castShadow = true;
     mesh.position.set(x, 0.48, z);

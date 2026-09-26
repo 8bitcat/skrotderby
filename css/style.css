@@ -129,7 +129,17 @@ html, body {
 }
 .panel .tag { color: #b9c1cc; font-size: 14.5px; margin: 10px 0 16px; line-height: 1.5; }
 
-.namelabel { display: block; font-size: 13px; color: #9aa3af; margin-bottom: 14px; }
+.optrow { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+.namelabel { display: block; font-size: 13px; color: #9aa3af; }
+.seg { display: flex; gap: 4px; margin-top: 4px; }
+.seg button {
+  background: #101318; color: #9aa3af;
+  border: 1px solid #3a414c; border-radius: 8px;
+  padding: 9px 12px; font-size: 13px; font-weight: 700;
+  cursor: pointer;
+}
+.seg button:hover { color: #eef1f5; }
+.seg button.sel { background: #e88b1e; color: #14171c; border-color: #e88b1e; }
 .namelabel input {
   display: block; margin-top: 4px;
   background: #101318; color: #eef1f5;

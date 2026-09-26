@@ -147,7 +147,7 @@ export class ClientGame {
   statusOf(v) {
     const s = v?.status;
     if (!s || !Array.isArray(s)) return null;
-    if (s[0] === 1) return { mode: 'race', lap: s[1], laps: s[2], place: s[3], n: s[4] };
+    if (s[0] === 1) return { mode: 'race', dist: s[1] * 100, total: s[2] * 100, place: s[3], n: s[4] };
     return { mode: 'derby', kvar: s[1], t: s[2] };
   }
 

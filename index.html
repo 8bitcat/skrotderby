@@ -12,6 +12,7 @@
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
     "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm"
   }
 }
@@ -38,7 +39,14 @@
   <div class="panel">
     <h1>🏁 SKROTDERBY</h1>
     <p class="tag">Spawna in som bil och kör runt i lobbyn. Ställ dig bakom grindarna — nytt race varje minut, och du kan alltid köra in mitt i ett lopp. Sist i fältet åker fortast, så klungan håller ihop. Eller ta rampen in i skrotarenan och slå sönder allt som rullar.</p>
-    <label class="namelabel">Ditt namn <input id="namein" maxlength="12" autocomplete="off" placeholder="Förare"></label>
+    <div class="optrow">
+      <label class="namelabel">Ditt namn <input id="namein" maxlength="12" autocomplete="off" placeholder="Förare"></label>
+      <div class="namelabel">Botarnas nivå
+        <div id="ainiva" class="seg">
+          <button data-n="latt">Lätt ☆</button><button data-n="medel">Medel ★</button><button data-n="svar">Svår ★★</button><button data-n="blandat" class="sel">Blandat</button>
+        </div>
+      </div>
+    </div>
     <div id="carselect"></div>
     <div class="btnrow">
       <button id="bpublic" class="btn big">🌍 KÖR! — publik server</button>

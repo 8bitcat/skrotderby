@@ -11,10 +11,10 @@ import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js';
 const hud = new Hud();
 hud.buildMenu();
 
-const { renderer, scene, camera, sun } = createScene();
+const { renderer, scene, camera, sun, sky } = createScene();
 const app = {
   renderer, scene, camera, sun,
-  cam: new ChaseCam(camera),
+  cam: new ChaseCam(camera, sky),
   input: new Input(),
   hud,
   audio: new AudioFx(),
@@ -65,7 +65,7 @@ async function startHost(withNet) {
   } else if (withNet) {
     hud.setNetStatus('Multiplayer kräver internet — kör vidare solo med bottar.', true);
   }
-  game = new HostGame(app, { RAPIER, defId, name, net });
+  game = new HostGame(app, { RAPIER, defId, name, net, aiNiva: hud.aiNiva });
   window.__game = game; // för felsökning/tester
   hud.startGame(code);
   starting = false;
@@ -108,7 +108,7 @@ async function startPublic() {
     hud.setNetStatus('Ingen internetanslutning — kör solo med bottar.', true);
     try {
       await loadRapier();
-      game = new HostGame(app, { RAPIER, defId, name, net: null });
+      game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
       window.__game = game;
       hud.startGame(null);
     } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }
@@ -129,7 +129,7 @@ async function startPublic() {
   try {
     await loadRapier();
     const net = await HostNet.create(PUBLIC_CODE);
-    game = new HostGame(app, { RAPIER, defId, name, net });
+    game = new HostGame(app, { RAPIER, defId, name, net, aiNiva: hud.aiNiva });
     window.__game = game;
     hud.startGame(PUBLIC_CODE);
   } catch {
@@ -142,7 +142,7 @@ async function startPublic() {
       hud.setNetStatus('Kunde inte nå publika servern (' + (e?.message || e?.type || 'okänt fel') + ') — kör solo.', true);
       try {
         await loadRapier();
-        game = new HostGame(app, { RAPIER, defId, name, net: null });
+        game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
         window.__game = game;
         hud.startGame(null);
       } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }

@@ -18,6 +18,21 @@ export class Hud {
     this.selectedDef = 1;
     this._announceT = null;
     setTimeout(() => this.el.hint?.classList.add('fade'), 22000);
+
+    // Botarnas svårighetsnivå
+    this.aiNiva = 'blandat';
+    try { this.aiNiva = localStorage.getItem('skrotderby_ai') || 'blandat'; } catch { /* ok */ }
+    const seg = document.getElementById('ainiva');
+    if (seg) {
+      seg.querySelectorAll('button').forEach(b => {
+        b.classList.toggle('sel', b.dataset.n === this.aiNiva);
+        b.addEventListener('click', () => {
+          this.aiNiva = b.dataset.n;
+          try { localStorage.setItem('skrotderby_ai', this.aiNiva); } catch { /* ok */ }
+          seg.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
+        });
+      });
+    }
   }
 
   buildMenu() {
@@ -108,7 +123,7 @@ export class Hud {
     if (!status) return `NÄSTA START <b>${fmt(tLeft)}</b> — ställ dig bakom grindarna, eller kör in i ett pågående lopp`;
     if (status.mode === 'race') {
       const plats = status.place > 0 ? `PLATS <b>${status.place}/${status.n}</b>` : '';
-      return `🏁 VARV <b>${status.lap}/${status.laps}</b> · ${plats} <span class="dim">· sist åker fortast!</span>`;
+      return `🏁 <b>${(status.dist / 1000).toFixed(1)}/${(status.total / 1000).toFixed(1)} km</b> · ${plats} <span class="dim">· sist åker fortast!</span>`;
     }
     return `💥 DERBY · <b>${status.kvar}</b> bilar kvar · ${fmt(status.t)}`;
   }

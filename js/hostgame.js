@@ -15,7 +15,8 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const yawOf = (car) => Math.atan2(-car.fwd.x, -car.fwd.z);
 
 export class HostGame {
-  constructor(app, { RAPIER, defId, name, net }) {
+  constructor(app, opts) {
+    const { RAPIER, defId, name, net } = opts;
     this.app = app;
     this.net = net;
 
@@ -34,7 +35,18 @@ export class HostGame {
         x: r2(pos.x), y: r2(pos.y), z: r2(pos.z),
         vx: r1(vel.x), vy: r1(vel.y), vz: r1(vel.z),
       }),
-      onWreck: (car) => this.notify(car, 'announce', '💀 DIN BIL SKROTADES!'),
+      onWreck: (car) => {
+        if (car.racing) {
+          // Utslagen mitt i loppet — tacklaren får äran
+          const av = car.lastHitBy && !car.lastHitBy.disposed ? car.lastHitBy : null;
+          if (av) av.score += 25;
+          this.notifyAll('toast', '💥 ' + car.name + ' UTSLAGEN' + (av ? ' av ' + av.name : '') + '!');
+          this.notify(car, 'announce', '💥 UTSLAGEN!');
+          if (av) this.notify(av, 'toast', 'Du slog ut ' + car.name + '! +25 skrotpoäng');
+        } else {
+          this.notify(car, 'announce', '💀 DIN BIL SKROTADES!');
+        }
+      },
       onBoom: (car) => this.net?.broadcast({ t: 'boom', id: car.id }),
       onSpawnCar: (car) => this.broadcastSpawn(car),
       onDespawnCar: (car) => this.net?.broadcast({ t: 'despawn', id: car.id }),
@@ -45,11 +57,12 @@ export class HostGame {
       allCars: this.ctx.allCars,
       notify: (car, kind, text) => this.notify(car, kind, text),
       notifyAll: (kind, text, snd) => this.notifyAll(kind, text, snd),
+      fillBots: (zone, n) => this.bots.fillRace(zone, n),
     };
     this.raceMgr = new RaceManager(rmCtx, this.worldApi.zones);
     this.ctx.raceMgr = this.raceMgr;
 
-    this.bots = new Bots(this.ctx, this.worldApi, this.raceMgr);
+    this.bots = new Bots(this.ctx, this.worldApi, this.raceMgr, opts.aiNiva || 'blandat');
     this.bots.spawnAll(CONF.BOTS);
 
     this.player = this.spawnFor('local', name, defId, 0);
@@ -183,7 +196,7 @@ export class HostGame {
         Math.round(100 * Math.max(0, c.health) / c.maxHealth),
         (c.wrecked ? 1 : 0) | (c.exploded ? 2 : 0) | (c.turboT > 0 ? 4 : 0),
         c.partMask(), c.wheelMask(), Math.round(c.score),
-        st ? (st.mode === 'race' ? [1, st.lap, st.laps, st.place, st.n] : [2, st.kvar, Math.round(st.t)]) : 0,
+        st ? (st.mode === 'race' ? [1, Math.round(st.dist / 100), Math.round(st.total / 100), st.place, st.n] : [2, st.kvar, Math.round(st.t)]) : 0,
       ];
     });
     const props = [];
@@ -231,7 +244,9 @@ export class HostGame {
       }
       if (!attacker && Math.abs(dvy) > 0.72 * dv) continue; // landning
 
-      const dmg = Math.min(CONF.DMG_MAX, (dv - CONF.DV_MIN) * CONF.DV_SCALE);
+      // Tacklingar bil-mot-bil ska slå ut folk — väggar straffar lite mildare
+      const mult = attacker ? CONF.DMG_CAR_MULT : CONF.DMG_WALL_MULT;
+      const dmg = Math.min(CONF.DMG_MAX, (dv - CONF.DV_MIN) * CONF.DV_SCALE * mult);
       if (dmg <= 0.5) continue;
       // Träffpunkt: på sidan knuffen kom ifrån
       const inv = 1 / dv;
@@ -319,6 +334,19 @@ export class HostGame {
     }
   }
 
+  // Efter målgång 13 km bort: skjutsa hem bilen till depån
+  handleReturnHome(dt) {
+    for (const c of this.ctx.allCars) {
+      if (!c.returnHome || c.returnHome <= 0) continue;
+      c.returnHome -= dt;
+      if (c.returnHome <= 0 && !c.wrecked && !c.disposed && !c.racing) {
+        const sp = this.worldApi.lobby.spawn(Math.floor(Math.random() * 12));
+        c.resetTo(new THREE.Vector3(sp.pos.x, 2.2, sp.pos.z), sp.heading);
+        if (c.owner !== null) this.notify(c, 'toast', 'Tillbaka i depån — bra kört!');
+      }
+    }
+  }
+
   handlePads(dt) {
     const check = (car, store) => {
       if (car.wrecked || car.disposed || car.racing) { store.padT = 0; return; }
@@ -363,6 +391,7 @@ export class HostGame {
     this.handleWipeouts();
     this.handleRespawns();
     this.handlePads(dt);
+    this.handleReturnHome(dt);
 
     for (const c of this.ctx.allCars) c.update(dt);
     this.updateLoose(dt);

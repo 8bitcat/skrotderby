@@ -1,7 +1,7 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES } from './config.js';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js';
 import { Car, spawnY } from './vehicle.js';
 import { pathPointAt } from './world.js';
 
@@ -9,10 +9,11 @@ const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const dist2d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export class Bots {
-  constructor(ctx, worldApi, raceMgr) {
+  constructor(ctx, worldApi, raceMgr, niva = 'blandat') {
     this.ctx = ctx;
     this.world = worldApi;
     this.raceMgr = raceMgr;
+    this.niva = niva;                 // 'latt' | 'medel' | 'svar' | 'blandat'
     this.list = [];
     this._nameI = 0;
     this._spawnI = 2;
@@ -20,18 +21,48 @@ export class Bots {
     this._t = new THREE.Vector3();
   }
 
+  _pickDiff(i) {
+    if (this.niva !== 'blandat' && AI_NIVAER[this.niva]) return AI_NIVAER[this.niva];
+    return [AI_NIVAER.latt, AI_NIVAER.medel, AI_NIVAER.svar][i % 3];
+  }
+
   spawnAll(n) {
     for (let i = 0; i < n; i++) {
-      const name = BOT_NAMES[this._nameI++ % BOT_NAMES.length];
+      const diff = this._pickDiff(i);
+      const name = BOT_NAMES[this._nameI++ % BOT_NAMES.length] + ' ' + diff.tag;
       const bot = {
-        name, car: null, state: 'ROAM',
+        name, diff, car: null, state: 'ROAM',
         target: new THREE.Vector3(), timer: rnd(2, 6),
         stuckT: 0, revT: 0, slot: null, zone: null, prey: null, preyT: 0,
+        nT: rnd(0, 10), phase: rnd(0, 6.28),
       };
       bot.car = this._newCar(bot);
       this._roamTarget(bot);
       this.list.push(bot);
     }
+  }
+
+  // Bottar spawnar BAKOM startlinjen och jagar ikapp (catch-up gör resten)
+  fillRace(zone, n) {
+    const idle = this.list.filter(b => !b.car.racing && !b.car.wrecked && !b.car.disposed);
+    let placed = 0;
+    for (const bot of idle) {
+      if (placed >= n) break;
+      const car = bot.car;
+      this._releaseSlot(bot);
+      if (zone.mode === 'race') {
+        pathPointAt(zone, zone.total - 26 - placed * 13, this._o);
+        const heading = Math.atan2(-this._o.tx, -this._o.tz);
+        car.resetTo(new THREE.Vector3(this._o.x + (placed % 2 ? 3.5 : -3.5), 1.4, this._o.z), heading);
+      } else {
+        const a = (placed / Math.max(1, n)) * Math.PI * 2;
+        car.resetTo(new THREE.Vector3(zone.center.x + 24 * Math.cos(a), 1.4, zone.center.z + 24 * Math.sin(a)), a + Math.PI / 2);
+      }
+      this.raceMgr.enroll(zone, car, false);
+      bot.state = 'RACE';
+      placed++;
+    }
+    return placed;
   }
 
   _newCar(bot) {
@@ -161,7 +192,7 @@ export class Bots {
         if (z.mode === 'race') {
           const p = z.race?.parts.get(car);
           const param = p ? p.lastParam : 0;
-          const look = 10 + car.absSpeed * 0.55;
+          const look = (10 + car.absSpeed * 0.55) * bot.diff.look;
           pathPointAt(z, param + look, this._o);
           this._t.set(this._o.x, 0, this._o.z);
           this._driveTo(bot, car, this._t, dt, 1);
@@ -205,6 +236,11 @@ export class Bots {
       throttle = aggr * (Math.abs(ang) > 1.1 ? 0.45 : 1);
     }
 
+    // Svårighetsgrad: gasfot + styrslarv
+    if (throttle > 0) throttle *= bot.diff.gas;
+    bot.nT += dt;
+    steer += Math.sin(bot.nT * 2.1 + bot.phase) * bot.diff.brus * Math.min(1, car.absSpeed / 15);
+
     // Fastkörningsskydd: backa en stund och vrid åt andra hållet
     if (car.absSpeed < 0.9 && throttle > 0.3) bot.stuckT += dt;
     else bot.stuckT = Math.max(0, bot.stuckT - dt * 2);
@@ -216,7 +252,7 @@ export class Bots {
     }
 
     car.input.throttle = throttle;
-    car.input.steer = steer;
+    car.input.steer = Math.max(-1, Math.min(1, steer));
     car.input.handbrake = false;
   }
 }

@@ -55,9 +55,13 @@ export class RaceManager {
     if (doRank) this._rankT = 0;
 
     for (const z of this.zones) {
+      if (z.extraGateT > 0) {
+        z.extraGateT -= dt;
+        if (z.extraGateT <= 0 && z.race && z.race.t > 10) z.gatesOpen = false;
+      }
       if (z.race) {
         z.race.t += dt;
-        if (z.gatesOpen && z.race.t > 10) z.gatesOpen = false;
+        if (z.gatesOpen && z.race.t > 10 && z.extraGateT <= 0) z.gatesOpen = false;
         if (z.mode === 'race') this.updateRaceMode(z, dt, doRank);
         else this.updateDerby(z);
         if (doJoin && z.race) this.joinScan(z, cars);
@@ -70,13 +74,22 @@ export class RaceManager {
   }
 
   tryStart(z, cars) {
-    if (z.race) return;
-    z.gridClaims.clear();
     const staged = cars.filter(c => !c.wrecked && !c.disposed && !c.racing && inAABB(z.staging, c.pos));
+    if (z.race) {
+      // Race pågår redan — men den som står i depån släpps in i det (grindarna öppnas en stund)
+      if (staged.length) { z.gatesOpen = true; z.extraGateT = 8; }
+      return;
+    }
+    z.gridClaims.clear();
     if (!staged.length) return;
     z.race = { t: 0, parts: new Map(), finishOrder: [], count: 0 };
     z.gatesOpen = true;
     for (const c of staged) this.enroll(z, c, false);
+    // Färre än FILL_MIN? Bottar spawnar bakom fältet och jagar ikapp
+    if (z.mode === 'race' && z.race.parts.size < CONF.FILL_MIN) {
+      const added = this.ctx.fillBots?.(z, CONF.FILL_MIN - z.race.parts.size) || 0;
+      if (added) this.ctx.notifyAll('toast', '🤖 ' + added + ' bottar hoppar in bakifrån!');
+    }
     this.ctx.notifyAll('toast', (z.mode === 'race' ? '🏁 Race' : '💥 Derby') + ' startade på ' + z.namn + '!', 'start');
     for (const c of staged) {
       if (c.owner !== null) {
@@ -86,7 +99,7 @@ export class RaceManager {
   }
 
   enroll(z, car, late) {
-    const p = { travel: 0, lastParam: 0, idx: 0, finished: false, place: 0, lap: 1, offT: 0 };
+    const p = { travel: 0, lastParam: 0, idx: 0, finished: false, place: 0, offT: 0 };
     if (z.mode === 'race') {
       const np = nearestParam(z, car.pos, -1);
       p.lastParam = np.param;
@@ -111,20 +124,20 @@ export class RaceManager {
       if (d < -z.total / 2) d += z.total;
       p.travel += d;
       p.lastParam = np.param;
-      p.lap = Math.max(1, Math.min(z.laps, 1 + Math.floor(p.travel / z.total)));
 
       if (np.dist > z.width / 2 + 6) {
         p.offT += dt;
         if (p.offT > 5) { this.leave(z, car, 'Du lämnade banan — ute ur racet'); continue; }
       } else p.offT = 0;
 
-      if (p.travel >= z.laps * z.total - 8) {
+      if (p.travel >= z.raceDist) {
         p.finished = true;
         r.finishOrder.push(car);
         p.place = r.finishOrder.length;
         car.speedMult = 1;
         car.racing = null;
         car.raceCooldown = 6;
+        car.returnHome = 6; // skjutsas hem till depån — målet ligger 13 km bort
         if (car.owner !== null) {
           this.ctx.notify(car, 'announce', '🏁 MÅL! Du kom ' + p.place + ':a!');
           if (p.place === 1) this.ctx.notifyAll('toast', '🏆 ' + car.name + ' vann racet på ' + z.namn + '!', 'win');
@@ -208,7 +221,7 @@ export class RaceManager {
     const p = z.race.parts.get(car);
     if (!p) return null;
     if (z.mode === 'race') {
-      return { mode: 'race', lap: p.lap, laps: z.laps, place: p.place || 0, n: z.race.parts.size };
+      return { mode: 'race', dist: Math.max(0, p.travel), total: z.raceDist, place: p.place || 0, n: z.race.parts.size };
     }
     const kvar = [...z.race.parts.keys()].filter(c => !c.wrecked && !c.disposed).length;
     return { mode: 'derby', kvar, t: Math.max(0, z.maxT - z.race.t) };

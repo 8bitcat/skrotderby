@@ -123,14 +123,14 @@ export class Car {
     if (this.raceCooldown > 0) this.raceCooldown -= dt;
 
     // Ramlade ur världen?
-    if (this.pos.y < -25) this.resetTo(new THREE.Vector3(-105, 3, 40), 0);
+    if (this.pos.y < -25) this.resetTo(new THREE.Vector3(CONF.LOBBY.x, 3, CONF.LOBBY.z + 40), 0);
 
     if (this.wrecked) return;
 
     this.flipT = this.up.y < 0.25 ? this.flipT + dt : 0;
 
-    // Styrning (mindre utslag i hög fart)
-    const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.05);
+    // Styrning (mindre utslag i hög fart, men nog för att kontra i sladd)
+    const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.035);
     const targetSteer = this.input.steer * steerMax;
     this.steerCur += (targetSteer - this.steerCur) * Math.min(1, 9 * dt);
 
@@ -192,14 +192,20 @@ export class Car {
       const capL = def.grip * 1.15 * F * dt * 1.4;
       longImp = Math.max(-capL, Math.min(capL, longImp));
 
+      // Lösare bakvagn → bilen driftar istället för att bita fast och välta
       const isRear = w.anchorL.z > 0;
-      const muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip;
+      const muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 0.84 : 1.0);
       let latImp = -vS * def.mass / 4;
       const capS = muS * F * dt;
       latImp = Math.max(-capS, Math.min(capS, latImp));
 
-      _d.copy(this._wf).multiplyScalar(longImp).addScaledVector(this._wr, latImp);
+      // Längskraft i kontaktpunkten — men SIDOKRAFT i tyngdpunktshöjd,
+      // så kurvtagning inte skapar vältmoment. Drift, inte volt!
+      _d.copy(this._wf).multiplyScalar(longImp);
       rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _c.y, z: _c.z }, true);
+      _e.copy(this.comOffset).applyQuaternion(this.quat).add(this.pos);
+      _d.copy(this._wr).multiplyScalar(latImp);
+      rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _e.y, z: _c.z }, true);
       w.spin += vF2 / w.radius * dt;
     }
     this.grounded = grounded > 0;
@@ -210,7 +216,10 @@ export class Car {
     this.dmgCooldown = CONF.DMG_COOLDOWN;
     amount = Math.min(CONF.DMG_MAX, amount);
     this.health -= amount * 0.55;
-    if (attacker && !attacker.disposed) attacker.score += Math.round(amount);
+    if (attacker && !attacker.disposed) {
+      attacker.score += Math.round(amount);
+      this.lastHitBy = attacker;
+    }
 
     // Vilka delar sitter närmast smällen?
     _q.copy(this.quat).invert();
