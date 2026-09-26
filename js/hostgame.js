@@ -6,6 +6,7 @@ import { Car, spawnY } from './vehicle.js';
 import { buildWorld } from './world.js';
 import { RaceManager } from './race.js';
 import { Bots } from './ai.js';
+import { Traffic } from './traffic.js';
 import { Hud } from './hud.js';
 
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -58,12 +59,18 @@ export class HostGame {
       notify: (car, kind, text) => this.notify(car, kind, text),
       notifyAll: (kind, text, snd) => this.notifyAll(kind, text, snd),
       fillBots: (zone, n) => this.bots.fillRace(zone, n),
+      applyVariant: () => this.applyVotedVariant(),
     };
     this.raceMgr = new RaceManager(rmCtx, this.worldApi.zones);
     this.ctx.raceMgr = this.raceMgr;
 
     this.bots = new Bots(this.ctx, this.worldApi, this.raceMgr, opts.aiNiva || 'blandat');
     this.bots.spawnAll(CONF.BOTS);
+    this.traffic = new Traffic(this.ctx, this.worldApi);
+    this.trainT = 50; // första tåget kommer efter ~30 s
+    this.votes = new Map();
+    this._voteCounts = [0, 0, 0];
+    this.app.hud.onVote = (i) => this.castVote('local', i);
 
     this.player = this.spawnFor('local', name, defId, 0);
     this.playerPadT = 0;
@@ -104,7 +111,7 @@ export class HostGame {
   }
 
   trySwap(car, defId) {
-    if (car.wrecked || car.disposed || defId < 0 || defId >= CARS.length) return car;
+    if (car.wrecked || car.disposed || defId < 0 || defId >= CONF.VALBARA) return car;
     if (car.racing) { this.notify(car, 'toast', 'Du kan inte byta bil mitt i ett lopp'); return car; }
     if (car.defId === defId) return car;
     const nc = this.swapCar(car, defId);
@@ -175,6 +182,10 @@ export class HostGame {
         if (rp) this.trySwap(rp.car, msg.defId | 0);
         break;
       }
+      case 'rosta': {
+        if (this.remotePlayers.has(id)) this.castVote(id, msg.v | 0);
+        break;
+      }
     }
   }
 
@@ -209,6 +220,9 @@ export class HostGame {
     return {
       t: 'snap', time: r2(this.simT), tLeft: r1(this.raceMgr.tLeft),
       zr: this.worldApi.zones.map(z => (z.race ? 1 : 0) | (z.gatesOpen ? 2 : 0)),
+      rt: this.worldApi.zones.map(z => z.race ? Math.round(z.race.t) : 0),
+      tz: r1(this.worldApi.train.z),
+      vv: this.worldApi.activeVariantIdx,
       cars, props,
     };
   }
@@ -217,8 +231,63 @@ export class HostGame {
   fixedStep(dt) {
     for (const c of this.ctx.allCars) c.physicsStep(dt);
     this.raceMgr.stepGates(dt);
+    this.stepTrain(dt);
     this.ctx.world.step();
     this.damageScan();
+  }
+
+  // Banröstning (7/8/9 eller klick) — vinnaren appliceras vid racestart
+  castVote(who, v) {
+    if (v < 0 || v > 2) return;
+    this.votes.set(who, v);
+    const counts = [0, 0, 0];
+    for (const x of this.votes.values()) counts[x]++;
+    this._voteCounts = counts;
+    this.net?.broadcast({ t: 'votestat', counts });
+  }
+
+  applyVotedVariant() {
+    const c = this._voteCounts;
+    let best = 0;
+    for (let i = 1; i < c.length; i++) if (c[i] > c[best]) best = i;
+    if (c[best] > 0 && best !== this.worldApi.activeVariantIdx) {
+      this.worldApi.setVariant(best);
+      this.net?.broadcast({ t: 'variant', v: best });
+    }
+    if (c[best] > 0) {
+      this.notifyAll('toast', '🗳 Banröstningen: ' + this.worldApi.variant.namn + ' (' + c[best] + ' röster)!');
+    }
+    this.votes.clear();
+    this._voteCounts = [0, 0, 0];
+    this.net?.broadcast({ t: 'votestat', counts: this._voteCounts });
+  }
+
+  // Tåget: korsar båda rakorna (47 s färd, ~30 m/s), period per banvariant
+  stepTrain(dt) {
+    this.trainT += dt;
+    const period = this.worldApi.variant?.tagPeriod ?? 80, travel = 47;
+    const ph = this.trainT % period;
+    const t = this.worldApi.train;
+    if (ph < travel) t.setZ(-700 + (ph / travel) * 1400);
+    else if (t.z < 2000) t.setZ(2500);
+  }
+
+  handleBoosts(dt) {
+    for (const c of this.ctx.allCars) {
+      if (c.boostCd > 0) { c.boostCd -= dt; continue; }
+      if (c.wrecked || c.disposed || c.isTraffic) continue;
+      for (const pad of this.worldApi.boostPads) {
+        if (Math.abs(c.pos.x - pad.x) < pad.hl && Math.abs(c.pos.z - pad.z) < pad.hw && c.grounded) {
+          c.boostCd = 2;
+          const m = c.def.mass * 6;
+          c.body.applyImpulse({ x: c.fwd.x * m, y: 0, z: c.fwd.z * m }, true);
+          this.ctx.particles.sparks(c.pos, 22, 0x54ff9a, 10);
+          if (c.owner === 'local') this.app.audio.boost();
+          this.net?.broadcast({ t: 'fx', k: 'boost', id: c.id, x: r1(c.pos.x), y: r1(c.pos.y), z: r1(c.pos.z) });
+          break;
+        }
+      }
+    }
   }
 
   // Δv-baserad skadedetektering: plötslig hastighetsändring på ett steg = smäll.
@@ -375,8 +444,12 @@ export class HostGame {
     if (input.take('KeyR')) this.tryReset(this.player);
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
-    for (let i = 0; i < CARS.length; i++) {
+    if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');
+    for (let i = 0; i < CONF.VALBARA; i++) {
       if (input.take('Digit' + (i + 1))) this.trySwap(this.player, i);
+    }
+    for (let i = 0; i < 3; i++) {
+      if (input.take('Digit' + (i + 7))) this.castVote('local', i);
     }
 
     this.acc += Math.min(dt, 0.06);
@@ -387,11 +460,27 @@ export class HostGame {
     }
 
     this.bots.update(dt);
+    this.traffic.update(dt);
     this.raceMgr.update(dt);
+    this.handleBoosts(dt);
     this.handleWipeouts();
     this.handleRespawns();
     this.handlePads(dt);
     this.handleReturnHome(dt);
+
+    // Varning: 15 s kvar och du står inte i någon fålla
+    const tl = this.raceMgr.tLeft;
+    if ((this._prevTL ?? 60) > 15 && tl <= 15) {
+      const inS = (c, s) => c.pos.x > s.x0 && c.pos.x < s.x1 && c.pos.z > s.z0 && c.pos.z < s.z1;
+      const zs = this.worldApi.zones;
+      for (const c of [this.player, ...[...this.remotePlayers.values()].map(r => r.car)]) {
+        if (c.racing || c.wrecked || c.disposed) continue;
+        if (!inS(c, zs[0].staging) && !inS(c, zs[1].staging)) {
+          this.notify(c, 'toast', '⏱ 15 s till start — följ pilarna till STARTFÅLLAN!');
+        }
+      }
+    }
+    this._prevTL = tl;
 
     for (const c of this.ctx.allCars) c.update(dt);
     this.updateLoose(dt);
@@ -410,7 +499,12 @@ export class HostGame {
     sun.position.set(p.pos.x + 80, 120, p.pos.z + 40);
     sun.target.position.set(p.pos.x, 0, p.pos.z);
     sun.target.updateMatrixWorld();
-    audio.setEngine(Math.min(1, Math.abs(p.speed) / 50), p.input.throttle);
+    audio.setEngine(Math.min(1, Math.abs(p.speed) / 50), p.input.throttle, p.def.motor);
+    if (kmh < 4 && p.input.throttle > 0.5 && !p.wrecked && (this._launchCd ?? 0) <= 0) {
+      audio.launch(p.def.motor);
+      this._launchCd = 3;
+    }
+    if ((this._launchCd ?? 0) > 0) this._launchCd -= dt;
     hud.update({
       kmh,
       health01: p.health / p.maxHealth,
@@ -418,6 +512,24 @@ export class HostGame {
       score: p.score,
       raceText: Hud.raceText(this.raceMgr.getStatus(p), this.raceMgr.tLeft),
     });
+
+    // Live-resultattavla + positionsbar + röstpanel
+    const rz = this.worldApi.zones[0];
+    if (rz.race) {
+      const rows = [...rz.race.parts.entries()]
+        .map(([c, q]) => ({
+          name: c.name || '—', place: q.finished ? q.place : (q.place || 99),
+          dist: Math.max(0, q.travel), fin: q.finished,
+          me: c === this.player, color: c.def.color,
+        }))
+        .sort((a, b) => a.place - b.place);
+      hud.board(rows, rz.race.t, rz.raceDist);
+      hud.progress(rows, rz.raceDist);
+    } else {
+      hud.board(null);
+      hud.progress(null);
+    }
+    hud.votePanel(!rz.race && this.raceMgr.tLeft <= 30, this._voteCounts, this.votes.get('local'));
 
     if (this.net) {
       this.snapT += dt;

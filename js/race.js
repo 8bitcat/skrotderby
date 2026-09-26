@@ -74,7 +74,7 @@ export class RaceManager {
   }
 
   tryStart(z, cars) {
-    const staged = cars.filter(c => !c.wrecked && !c.disposed && !c.racing && inAABB(z.staging, c.pos));
+    const staged = cars.filter(c => !c.wrecked && !c.disposed && !c.racing && !c.isTraffic && inAABB(z.staging, c.pos));
     if (z.race) {
       // Race pågår redan — men den som står i depån släpps in i det (grindarna öppnas en stund)
       if (staged.length) { z.gatesOpen = true; z.extraGateT = 8; }
@@ -82,6 +82,7 @@ export class RaceManager {
     }
     z.gridClaims.clear();
     if (!staged.length) return;
+    if (z.mode === 'race') this.ctx.applyVariant?.(); // banröstningens vinnare byggs in
     z.race = { t: 0, parts: new Map(), finishOrder: [], count: 0 };
     z.gatesOpen = true;
     for (const c of staged) this.enroll(z, c, false);
@@ -151,10 +152,13 @@ export class RaceManager {
       const active = [...r.parts.entries()].filter(([c, p]) => !p.finished && !c.wrecked && !c.disposed);
       active.sort((a, b) => b[1].travel - a[1].travel);
       const n = active.length;
+      const lead = n ? active[0][1].travel : 0;
       active.forEach(([c, p], i) => {
         p.place = r.finishOrder.length + i + 1;
-        // Catch-up: ledaren får 1.0, sista bilen +CATCHUP — klungan hålls ihop
-        c.speedMult = n > 1 ? 1 + CONF.CATCHUP * (i / (n - 1)) : 1;
+        // AVSTÅNDET till ettan bestämmer farten: tätt bakom = samma fart
+        // (klunga runt förstaplatsen), långt bak = rejält snabbare.
+        const gap = Math.max(0, lead - p.travel);
+        c.speedMult = 1 + Math.min(CONF.CATCHUP_MAX, gap * CONF.CATCHUP_PER_M);
       });
       if (n === 0 || r.t > z.maxT) this.endRace(z);
     }
@@ -182,7 +186,7 @@ export class RaceManager {
 
   joinScan(z, cars) {
     for (const car of cars) {
-      if (car.racing || car.wrecked || car.disposed || car.raceCooldown > 0) continue;
+      if (car.racing || car.wrecked || car.disposed || car.raceCooldown > 0 || car.isTraffic) continue;
       if (z.race.parts.has(car)) continue;
       if (z.mode === 'race') {
         const np = nearestParam(z, car.pos, -1);

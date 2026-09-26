@@ -1,5 +1,5 @@
 // HUD + startmeny (DOM ovanpå canvasen)
-import { CARS } from './config.js';
+import { CARS, CONF, BANOR } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,7 +39,7 @@ export class Hud {
     try { this.el.namein.value = localStorage.getItem('skrotderby_namn') || ''; } catch { /* privat läge */ }
     const wrap = this.el.carselect;
     wrap.innerHTML = '';
-    CARS.forEach((def, i) => {
+    CARS.slice(0, CONF.VALBARA).forEach((def, i) => {
       const card = document.createElement('div');
       card.className = 'card' + (i === this.selectedDef ? ' sel' : '');
       const hex = '#' + def.color.toString(16).padStart(6, '0');
@@ -113,6 +113,61 @@ export class Hud {
     this.el.healthfill.style.background = f > 0.5 ? '#6fce4e' : f > 0.25 ? '#e8b21e' : '#e23131';
     this.el.score.textContent = 'Skrotpoäng: ' + score;
     this.el.raceinfo.innerHTML = raceText;
+  }
+
+  // Live-resultattavla uppe till höger — uppdateras hela tiden
+  board(rows, elapsed, total) {
+    const el = document.getElementById('board');
+    if (!el) return;
+    if (!rows || !rows.length) { el.style.display = 'none'; return; }
+    const now = performance.now();
+    if (this._boardT && now - this._boardT < 250) return;
+    this._boardT = now;
+    el.style.display = 'block';
+    const fmt = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+    let html = `<div class="bhead">🏁 ${fmt(elapsed)} · ${(total / 1000).toFixed(0)} km</div>`;
+    rows.slice(0, 9).forEach((r) => {
+      html += `<div class="brow${r.me ? ' me' : ''}"><b>${r.place < 99 ? r.place : '–'}</b><span>${r.name}</span><i>${r.fin ? 'MÅL' : (r.dist / 1000).toFixed(1) + ' km'}</i></div>`;
+    });
+    el.innerHTML = html;
+  }
+
+  // Positionsbar längst ner: var ligger alla på banan?
+  progress(rows, total) {
+    const el = document.getElementById('raceprog');
+    if (!el) return;
+    if (!rows || !rows.length) { el.style.display = 'none'; return; }
+    const now = performance.now();
+    if (this._progT && now - this._progT < 120) return;
+    this._progT = now;
+    el.style.display = 'block';
+    const tot = total || rows.reduce((m, r) => Math.max(m, r.dist), 1) || 1;
+    let html = '<div class="pline"></div>';
+    for (const r of rows) {
+      const pct = Math.max(0, Math.min(100, (r.dist / tot) * 100));
+      const hex = '#' + (r.color ?? 0xffffff).toString(16).padStart(6, '0');
+      html += `<i class="pmark${r.me ? ' me' : ''}" style="left:${pct}%;background:${hex}"></i>`;
+    }
+    el.innerHTML = html;
+  }
+
+  // Banröstning innan varje start (7/8/9 eller klick)
+  votePanel(show, counts, myVote) {
+    const el = document.getElementById('votepanel');
+    if (!el) return;
+    if (!show) { el.style.display = 'none'; this._voteBuilt = false; return; }
+    el.style.display = 'block';
+    const key = (counts || []).join('|') + '|' + myVote;
+    if (this._voteBuilt === key) return;
+    this._voteBuilt = key;
+    let html = '<div class="vhead">🗳 RÖSTA PÅ NÄSTA BANA</div>';
+    BANOR.forEach((namn, i) => {
+      html += `<button class="vopt${myVote === i ? ' sel' : ''}" data-v="${i}"><b>${i + 7}</b> ${namn} <i>${(counts && counts[i]) || 0} röster</i></button>`;
+    });
+    el.innerHTML = html;
+    el.querySelectorAll('.vopt').forEach(b => {
+      b.addEventListener('click', () => this.onVote?.(+b.dataset.v));
+    });
   }
 
   static raceText(status, tLeft) {

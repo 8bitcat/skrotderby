@@ -146,27 +146,18 @@ export class Bots {
             if (slot != null) {
               bot.zone = z; bot.slot = slot;
               z.gridClaims.add(slot);
-              bot.state = 'TO_GRID';
-              bot.entered = false;
-              bot.gridT = 0;
+              // Teleportera RAKT till startrutan — bottar ska aldrig fastna på vägen
+              const g = z.grid[slot];
+              car.resetTo(new THREE.Vector3(g.pos.x, 1.4, g.pos.z), g.heading);
+              bot.state = 'WAIT';
             }
           }
         }
         break;
       }
-      case 'TO_GRID': {
-        if (!bot.zone) { bot.state = 'ROAM'; break; }
-        bot.gridT = (bot.gridT || 0) + dt;
-        if (bot.gridT > 50) { this._releaseSlot(bot); bot.state = 'ROAM'; this._roamTarget(bot); break; }
-        // Först till ingången utanför fickan, sedan till rutan — annars kör de in i väggen
-        if (!bot.entered) {
-          this._driveTo(bot, car, bot.zone.entry, dt, 0.7);
-          if (dist2d(car.pos, bot.zone.entry) < 8) bot.entered = true;
-        } else {
-          const g = bot.zone.grid[bot.slot];
-          this._driveTo(bot, car, g.pos, dt, 0.5);
-          if (dist2d(car.pos, g.pos) < 2.8) bot.state = 'WAIT';
-        }
+      case 'TO_GRID': { // legacy-läge — ska inte inträffa, men studsa hem säkert
+        bot.state = 'ROAM';
+        this._roamTarget(bot);
         break;
       }
       case 'WAIT': {

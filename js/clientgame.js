@@ -113,6 +113,21 @@ export class ClientGame {
         }
         break;
       }
+      case 'fx': {
+        if (msg.k === 'boost') {
+          _v.set(msg.x, msg.y ?? 0.5, msg.z);
+          this.app.particles.sparks(_v, 22, 0x54ff9a, 10);
+          if (msg.id === this.myId) this.app.audio.boost();
+        }
+        break;
+      }
+      case 'votestat':
+        this.voteCounts = msg.counts || [0, 0, 0];
+        break;
+      case 'variant':
+        this.worldApi.setVariant(msg.v | 0);
+        this.myVote = undefined;
+        break;
       case 'msg': {
         if (msg.kind === 'toast') this.app.hud.toast(msg.text);
         else this.app.hud.announce(msg.text);
@@ -129,6 +144,9 @@ export class ClientGame {
     this.timeOffset = this.timeOffset == null ? off : this.timeOffset + (off - this.timeOffset) * 0.08;
     this.tLeft = msg.tLeft;
     this.zr = msg.zr;
+    this.raceT = msg.rt?.[0] ?? 0;
+    this.trainTarget = msg.tz ?? -2500;
+    if (msg.vv != null && msg.vv !== this.worldApi.activeVariantIdx) this.worldApi.setVariant(msg.vv);
     for (const row of msg.cars) {
       const v = this.views.get(row[0]);
       if (v) v.pushState(msg.time, row);
@@ -202,9 +220,24 @@ export class ClientGame {
     if (input.take('KeyR')) this.net.send({ t: 'reset' });
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
-    for (let i = 0; i < CARS.length; i++) {
+    if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');
+    for (let i = 0; i < CONF.VALBARA; i++) {
       if (input.take('Digit' + (i + 1))) this.net.send({ t: 'byt', defId: i });
     }
+    for (let i = 0; i < 3; i++) {
+      if (input.take('Digit' + (i + 7))) { this.myVote = i; this.net.send({ t: 'rosta', v: i }); }
+    }
+    if (!this._voteHook) {
+      this._voteHook = true;
+      hud.onVote = (i) => { this.myVote = i; this.net.send({ t: 'rosta', v: i }); };
+    }
+
+    // Tåget rullar mjukt mot senaste synkade positionen
+    if (this.trainTarget != null) {
+      const tr = this.worldApi.train;
+      tr.setZ(tr.z + (this.trainTarget - tr.z) * Math.min(1, 8 * dt));
+    }
+    if (this.zr[0] & 1) this.raceT += dt;
 
     const me = this.myView();
     if (me && me.group.visible) {
@@ -222,7 +255,12 @@ export class ClientGame {
       sun.position.set(me.pos.x + 80, 120, me.pos.z + 40);
       sun.target.position.set(me.pos.x, 0, me.pos.z);
       sun.target.updateMatrixWorld();
-      audio.setEngine(Math.min(1, (me.kmh / 3.6) / 50), inp.throttle);
+      audio.setEngine(Math.min(1, (me.kmh / 3.6) / 50), inp.throttle, CARS[me.defId]?.motor);
+      if (me.kmh < 4 && inp.throttle > 0.5 && !me.wrecked && (this._launchCd ?? 0) <= 0) {
+        audio.launch(CARS[me.defId]?.motor);
+        this._launchCd = 3;
+      }
+      if ((this._launchCd ?? 0) > 0) this._launchCd -= dt;
       hud.update({
         kmh: me.kmh,
         health01: me.health01,
@@ -231,5 +269,25 @@ export class ClientGame {
         raceText: Hud.raceText(this.statusOf(me), this.tLeft),
       });
     }
+
+    // Live-resultattavla + positionsbar + röstpanel
+    if (this.zr[0] & 1) {
+      let total = 13000;
+      const rows = [];
+      for (const v of this.views.values()) {
+        const s = v.status;
+        if (Array.isArray(s) && s[0] === 1) {
+          total = s[2] * 100 || total;
+          rows.push({ name: v.name || '—', place: s[3] || 99, dist: s[1] * 100, me: v.id === this.myId, color: CARS[v.defId]?.color ?? 0xffffff });
+        }
+      }
+      rows.sort((a, b) => a.place - b.place);
+      hud.board(rows, this.raceT, total);
+      hud.progress(rows.map(r => ({ ...r, dist: r.dist })), total);
+    } else {
+      hud.board(null);
+      hud.progress(null);
+    }
+    hud.votePanel(!(this.zr[0] & 1) && this.tLeft <= 30, this.voteCounts || [0, 0, 0], this.myVote);
   }
 }

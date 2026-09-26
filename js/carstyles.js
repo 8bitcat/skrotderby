@@ -77,10 +77,11 @@ function profileFor(style, l, h) {
       [F + 0.05, y0], [F, -h * 0.12], [F + l * 0.06, -h * 0.02], [F + l * 0.42, h * 0.06],
       [F + l * 0.52, h * 0.08], [F + l * 0.68, h * 0.42], [B - l * 0.14, h * 0.46],
       [B - l * 0.04, h * 0.2], [B, h * 0.12], [B - 0.03, y0]];
-    case 'muscle': return [
-      [F + 0.05, y0], [F, -h * 0.14], [F + l * 0.04, h * 0.06], [F + l * 0.36, h * 0.12],
-      [F + l * 0.44, h * 0.14], [F + l * 0.56, h * 0.5], [B - l * 0.26, h * 0.52],
-      [B - l * 0.14, h * 0.24], [B - 0.02, h * 0.2], [B, -h * 0.08], [B - 0.03, y0]];
+    case 'muscle': return [ // NASCAR-stocker: lång slät nos, rakad ruta, fastback
+      [F + 0.06, y0], [F, -h * 0.16], [F + l * 0.03, -h * 0.02], [F + l * 0.14, h * 0.05],
+      [F + l * 0.34, h * 0.11], [F + l * 0.46, h * 0.14], [F + l * 0.54, h * 0.32],
+      [F + l * 0.62, h * 0.47], [F + l * 0.68, h * 0.5], [B - l * 0.22, h * 0.5],
+      [B - l * 0.12, h * 0.42], [B - l * 0.04, h * 0.26], [B, h * 0.16], [B - 0.03, y0]];
     case 'rally': return [
       [F + 0.05, y0], [F, -h * 0.12], [F + l * 0.05, h * 0.04], [F + l * 0.3, h * 0.1],
       [F + l * 0.4, h * 0.12], [F + l * 0.52, h * 0.5], [B - l * 0.2, h * 0.52],
@@ -119,13 +120,14 @@ function extrudeProfile(pts, depth, material, bevel = 0.055) {
 // sista branta fallet), stängt vid bältlinjen. Matchar alltid karossen.
 function glassBand(pts, def) {
   const h = def.dims.h;
+  // Kupolen = alla punkter över tröskeln (robust även för mjuka NASCAR-profiler)
+  const thresh = h * 0.26;
   let i0 = -1, i1 = -1;
-  for (let i = 0; i < pts.length - 1; i++) {
-    if (pts[i + 1][1] - pts[i][1] > h * 0.18) { i0 = i; break; }
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i][1] > thresh) { i0 = Math.max(0, i - 1); break; }
   }
-  for (let i = pts.length - 2; i >= 0; i--) {
-    // bakrutan: stort fall som BÖRJAR uppe vid taket (inte aktern ner till golvet)
-    if (pts[i][1] - pts[i + 1][1] > h * 0.12 && pts[i][1] > h * 0.3) { i1 = i + 1; break; }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    if (pts[i][1] > thresh) { i1 = Math.min(pts.length - 1, i + 1); break; }
   }
   if (i0 < 0 || i1 <= i0) return null;
   const belt = h * 0.15;
@@ -180,7 +182,7 @@ function rbox(sx, sy, sz, material, r = 0.045) {
 export function wheelAnchors(def) {
   const { l, w, h } = def.dims;
   const wz = l / 2 - def.wheelR - 0.25;
-  const wx = w / 2 - 0.06;
+  const wx = w / 2 - 0.02; // bred racing-spårvidd
   const wy = -h / 2 + 0.08;
   const all = def.drive === 'awd';
   return [
@@ -249,7 +251,8 @@ export function buildCarVisual(def) {
   const group = new THREE.Group();
   const parts = [];
   const bodyMeshes = [];
-  const rusty = def.style === 'skrot';
+  const rusty = def.style === 'skrot' && !def.civil;
+  const civil = !!def.civil;
   const C = def.color;
   const accent = '#' + new THREE.Color(def.accent ?? 0xffffff).getHexString();
   const nr = NUMMER[def.nrIdx ?? 0] ?? 9;
@@ -304,11 +307,16 @@ export function buildCarVisual(def) {
   if (isBuggy) addBody(rbox(w * 0.6, h * 0.1, l * 0.7, plast(0x101215), 0.04), 0, -h * 0.44, 0);
   else addBody(rbox(w * 0.82, h * 0.2, l * 0.9, plast(0x101215), 0.05), 0, -h * 0.44, 0);
 
-  // Hjulbågar
+  // Hjulbågar + NASCAR-sidokjolar (låg racing-stance)
   const anchors = wheelAnchors(def);
   for (const a of anchors) {
     const flare = rbox(0.14, def.wheelR * 1.1, def.wheelR * 2.5, plast(0x1a1d21), 0.05);
     addBody(flare, Math.sign(a.x) * (w * 0.44 + 0.05), a.y + def.wheelR * 0.55, a.z);
+  }
+  if (!isBuggy && !civil) {
+    for (const side of [-1, 1]) {
+      addBody(rbox(0.07, h * 0.15, l * 0.52, plast(0x14171b), 0.03), side * (w * 0.46), -h * 0.38, l * 0.02);
+    }
   }
 
   // Grill + front
@@ -360,6 +368,14 @@ export function buildCarVisual(def) {
       hood.add(stripe);
     }
   }
+  if (!civil) {
+    // NASCAR-nummer även på huven
+    const hd = numberDecal(nr, accent, Math.min(w * 0.4, l * 0.18));
+    hd.rotation.x = -Math.PI / 2;
+    hd.rotation.z = Math.PI;
+    hd.position.y = 0.042;
+    hood.add(hd);
+  }
   addPart('huv', hood, 0, hoodY, hoodZ, w * 0.66, 0.1, l * 0.22, 30);
 
   if (isPickup) {
@@ -394,10 +410,13 @@ export function buildCarVisual(def) {
     const doorZ = l * 0.02;
     for (const side of [-1, 1]) {
       const door = rbox(0.09, h * 0.4, l * 0.26, panelPaint(), 0.035);
-      const decal = numberDecal(nr, accent, Math.min(0.52, h * 0.36));
-      decal.rotation.y = side * Math.PI / 2;
-      decal.position.x = side * 0.056;
-      door.add(decal);
+      if (!civil) {
+        // Stort NASCAR-dörrnummer
+        const decal = numberDecal(nr, accent, Math.min(0.68, h * 0.46));
+        decal.rotation.y = side * Math.PI / 2;
+        decal.position.x = side * 0.056;
+        door.add(decal);
+      }
       const handle = rbox(0.03, 0.035, 0.16, chrome(), 0.01);
       handle.position.set(side * 0.06, h * 0.13, -l * 0.06);
       door.add(handle);
@@ -416,10 +435,12 @@ export function buildCarVisual(def) {
     const roofL = rs ? Math.max(l * 0.1, rs.len * 0.85) : l * 0.24;
     const roofY = (rs ? rs.y : h * 0.5) + 0.045 + 0.06; // ovanpå glasbandet
     const roof = rbox(w * 0.6, 0.055, roofL, panelPaint(), 0.025);
-    const rd = numberDecal(nr, accent, Math.min(w * 0.5, roofL * 0.8));
-    rd.rotation.x = -Math.PI / 2;
-    rd.position.y = 0.035;
-    roof.add(rd);
+    if (!civil) {
+      const rd = numberDecal(nr, accent, Math.min(w * 0.5, roofL * 0.8));
+      rd.rotation.x = -Math.PI / 2;
+      rd.position.y = 0.035;
+      roof.add(rd);
+    }
     addPart('tak', roof, 0, roofY, roofZ, w * 0.6, 0.08, roofL, 42);
   } else {
     // Buggy: rollbur (statisk) + sidopaneler (delar)

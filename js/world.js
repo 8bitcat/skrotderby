@@ -104,6 +104,21 @@ function mergedSegs(path, spacing = 10, maxLen = 70) {
 }
 
 // ---------- Textur-hjälpare ----------
+// Högupplösta PBR-texturer (Poly Haven, CC0) — ligger i textures/
+function pbr(name, rx, ry) {
+  const L = new THREE.TextureLoader();
+  const map = L.load('textures/' + name + '_diff_1k.jpg');
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(rx, ry);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+  const normalMap = L.load('textures/' + name + '_nor_gl_1k.jpg');
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+  normalMap.repeat.set(rx, ry);
+  normalMap.anisotropy = 4;
+  return { map, normalMap };
+}
+
 function canvasTex(w, h, draw, repeat) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
@@ -132,9 +147,9 @@ function stripeMat() {
 }
 
 // ---------- Fysik-hjälpare ----------
-function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0) {
+function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0) {
   if (!ctx.world) return null;
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, yaw, 0));
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, yaw, rotZ));
   const body = ctx.world.createRigidBody(
     ctx.RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z)
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
@@ -144,7 +159,7 @@ function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0) {
     body
   );
   if (noDmg) ctx.noDmg.add(col.handle);
-  return col;
+  return { body, col };
 }
 
 // ---------- Huvudbygget ----------
@@ -154,23 +169,11 @@ export function buildWorld(ctx) {
   const { HX, HZ, R, W } = CONF.TRACK;
   const LC = CONF.LOBBY, AC = CONF.ARENA, SX = CONF.STAGE_X, AR = 58;
 
-  // Mark
-  const grassTex = canvasTex(256, 256, (c) => {
-    c.fillStyle = '#4e7c3b'; c.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 1400; i++) {
-      c.fillStyle = ['#44702f', '#588a42', '#4a7736', '#618f4b'][i % 4];
-      c.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
-    }
-    for (let i = 0; i < 26; i++) {
-      c.fillStyle = 'rgba(90,120,60,0.25)';
-      c.beginPath();
-      c.arc(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 22, 0, 7);
-      c.fill();
-    }
-  }, [WX / 5, WZ / 5]);
+  // Mark — högupplöst gräs/sten-PBR
+  const grassPbr = pbr('aerial_grass_rock', WX / 9, WZ / 9);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WX * 2, WZ * 2),
-    new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 })
+    new THREE.MeshStandardMaterial({ ...grassPbr, color: 0x8fb573, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -187,26 +190,19 @@ export function buildWorld(ctx) {
   racePts = rotateToNearest(racePts, SX, HZ);
   const racePath = makePath(racePts);
 
-  // Asfalt med spårslitage
-  const asphaltTex = canvasTex(128, 64, (c) => {
-    c.fillStyle = '#2b2d32'; c.fillRect(0, 0, 128, 64);
-    for (let i = 0; i < 700; i++) {
-      c.fillStyle = ['#26282c', '#33363b', '#2e3036'][i % 3];
-      c.fillRect(Math.random() * 128, Math.random() * 64, 1.6, 1.6);
-    }
-    c.fillStyle = 'rgba(16,17,20,0.4)';
-    c.fillRect(0, 14, 128, 9);
-    c.fillRect(0, 41, 128, 9);
-  }, true);
-  scene.add(buildRibbon(racePts, racePath, W, asphaltTex));
+  // Asfalt — högupplöst PBR (u längs banan bakat i UV, v-repeat = 4 tvärs)
+  const asphaltPbr = pbr('asphalt_02', 1, 4);
+  scene.add(buildRibbon(racePts, racePath, W, asphaltPbr));
 
   // Mittstreck
   const dense14 = resamplePath(racePath, 14);
   addDashes(scene, dense14, 0.05);
 
   // Kantlinjer + väggar från sammanslagna segment
+  const TRAIN_X = SX - CONF.TRAIN_X_KM * 1000;
   const segs = mergedSegs(racePath, 10, 70);
   const raceWallSkip = (mid, inward) => {
+    if (Math.abs(mid.x - TRAIN_X) < 9) return true;                       // järnvägen korsar
     if (!inward) return false;
     if (Math.abs(mid.x - SX) < 26 && mid.z > HZ - 22) return true;        // depåöppning
     if (Math.abs(mid.x - (SX - 110)) < 14 && mid.z > HZ - 22) return true; // kör-in-valv
@@ -241,6 +237,117 @@ export function buildWorld(ctx) {
     makeKmSign(scene, SX - k * 1000, HZ - W / 2 - 3, k + ' km');
   }
 
+  // Sponsorportaler varannan km
+  const SPONSORER = ['SKROT-KRAFT', 'DERBY-COLA', 'ROSTFRITT AB', 'KROCK & CO', 'PLÅTIS BILDELAR', 'TURBO-TWIST'];
+  [2, 4, 6, 8, 10, 12].forEach((k, i) => {
+    makeArch(ctx, scene, SX - k * 1000 - 500, HZ, Math.PI / 2, SPONSORER[i], W / 2 + 1);
+  });
+
+  // Betong till refuger/pelare + boost-textur (används av banvarianterna)
+  const refM = new THREE.MeshStandardMaterial({ ...pbr('concrete_wall_008', 3, 0.8), roughness: 0.85 });
+  const boostTex = canvasTex(64, 128, (c) => {
+    c.fillStyle = '#0b3320'; c.fillRect(0, 0, 64, 128);
+    c.fillStyle = '#54ff9a';
+    for (let y = 8; y < 128; y += 32) {
+      c.beginPath();
+      c.moveTo(6, y + 18); c.lineTo(32, y); c.lineTo(58, y + 18);
+      c.lineTo(58, y + 26); c.lineTo(32, y + 8); c.lineTo(6, y + 26);
+      c.closePath(); c.fill();
+    }
+  });
+  // "Förråd" under marken där inaktiva varianters lösa saker parkeras
+  fixedBox(ctx, SX - 6500, -499, HZ, 7000, 1, 80, 0, true);
+
+  // Järnväg som korsar BÅDA rakorna + tåg
+  const railM = new THREE.MeshStandardMaterial({ color: 0x3c4148, metalness: 0.7, roughness: 0.5 });
+  for (const rx of [-0.8, 0.8]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, WZ * 2 - 24), railM);
+    rail.position.set(TRAIN_X + rx, 0.11, 0);
+    scene.add(rail);
+  }
+  for (const cz of [HZ, -HZ]) {
+    const plank = new THREE.Mesh(new THREE.PlaneGeometry(7, W + 4), new THREE.MeshStandardMaterial({ map: stripeMat().map, roughness: 0.8 }));
+    plank.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    plank.position.set(TRAIN_X, 0.045, cz);
+    scene.add(plank);
+  }
+  const crossingLights = [];
+  for (const cz of [HZ - W / 2 - 2.5, HZ + W / 2 + 2.5, -HZ - W / 2 - 2.5, -HZ + W / 2 + 2.5]) {
+    for (const sx of [-6, 6]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.4, 0.25), new THREE.MeshStandardMaterial({ color: 0xd8d3c8 }));
+      post.position.set(TRAIN_X + sx, 1.7, cz);
+      scene.add(post);
+      const lampM = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff2222, emissiveIntensity: 0 });
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), lampM);
+      lamp.position.set(TRAIN_X + sx, 3.6, cz);
+      scene.add(lamp);
+      crossingLights.push(lampM);
+    }
+  }
+  // Tåget: lok + 3 vagnar som EN kinematisk kropp
+  const trainGroup = new THREE.Group();
+  const wagonColors = [0x8a2f2f, 0x4a5a6a, 0x5d6a48, 0x4a5a6a];
+  for (let i = 0; i < 4; i++) {
+    const wag = new THREE.Mesh(
+      new THREE.BoxGeometry(3.2, 3.4, 12),
+      new THREE.MeshStandardMaterial({ color: wagonColors[i], roughness: 0.6, metalness: 0.3 })
+    );
+    wag.position.set(0, 1.9, i * 12.8 - 19.2);
+    wag.castShadow = true;
+    trainGroup.add(wag);
+    if (i === 0) {
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 2), new THREE.MeshStandardMaterial({ color: 0x6a2424, roughness: 0.6 }));
+      nose.position.set(0, 1.3, -20.6);
+      trainGroup.add(nose);
+    }
+  }
+  trainGroup.position.set(TRAIN_X, 0, -2500);
+  scene.add(trainGroup);
+  let trainBody = null;
+  if (ctx.world) {
+    trainBody = ctx.world.createRigidBody(
+      ctx.RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(TRAIN_X, 0, -2500)
+    );
+    for (let i = 0; i < 4; i++) {
+      ctx.world.createCollider(
+        ctx.RAPIER.ColliderDesc.cuboid(1.6, 1.7, 6).setTranslation(0, 1.9, i * 12.8 - 19.2),
+        trainBody
+      );
+    }
+  }
+  const train = {
+    x: TRAIN_X, z: -2500, group: trainGroup,
+    setZ(z) {
+      this.z = z;
+      trainGroup.position.z = z;
+      trainBody?.setNextKinematicTranslation({ x: TRAIN_X, y: 0, z });
+    },
+  };
+
+  // Motorvägsbron — kör under den
+  const BX = SX - CONF.BRIDGE_X_KM * 1000;
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 0.8, 400),
+    new THREE.MeshStandardMaterial({ color: 0x6a7077, roughness: 0.8 })
+  );
+  deck.position.set(BX, 7.2, 0);
+  deck.castShadow = true;
+  scene.add(deck);
+  fixedBox(ctx, BX, 7.2, 0, 5, 0.4, 200, 0, true);
+  for (const sz of [-4.6, 4.6]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1, 400), new THREE.MeshStandardMaterial({ color: 0x8a9099 }));
+    rail.position.set(BX + sz, 8, 0);
+    scene.add(rail);
+  }
+  for (let pz = -175; pz <= 175; pz += 50) {
+    if (Math.abs(Math.abs(pz) - HZ) < 26) continue; // inga pelare på banan
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 6.8, 1.6), refM);
+    pillar.position.set(BX, 3.4, pz);
+    pillar.castShadow = true;
+    scene.add(pillar);
+    fixedBox(ctx, BX, 3.4, pz, 0.8, 3.4, 0.8);
+  }
+
   // Depåficka (öppen söderut mot lobbyn)
   fixedBox(ctx, SX - 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
   fixedBox(ctx, SX + 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
@@ -254,6 +361,34 @@ export function buildWorld(ctx) {
     raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI });
   }
 
+  // === TYDLIG STARTFÅLLA: målad yta + ledfyr + pilar från lobbyn ===
+  const beacons = [];
+  const chevrons = [];
+  const fallaTex = canvasTex(512, 512, (c) => {
+    c.fillStyle = 'rgba(232,139,30,0.32)'; c.fillRect(0, 0, 512, 512);
+    c.strokeStyle = '#ffb64d'; c.lineWidth = 10; c.strokeRect(8, 8, 496, 496);
+    c.strokeStyle = 'rgba(255,182,77,0.5)'; c.lineWidth = 4;
+    for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(i * 128, 40); c.lineTo(i * 128, 500); c.stroke(); }
+    c.fillStyle = '#ffb64d';
+    c.font = '900 72px system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.save(); c.translate(256, 470); c.fillText('STARTFÅLLA', 0, 0); c.restore();
+  });
+  const falla = new THREE.Mesh(
+    new THREE.PlaneGeometry(46, 41),
+    new THREE.MeshBasicMaterial({ map: fallaTex, transparent: true, depthWrite: false })
+  );
+  falla.rotation.x = -Math.PI / 2;
+  falla.position.set(SX, 0.048, HZ - 32.5);
+  scene.add(falla);
+  beacons.push(makeBeacon(scene, SX, HZ - 32, 0xffa02e));
+  makeArch(ctx, scene, SX, HZ - 53, Math.PI, '⬇ STARTFÅLLA — STÄLL DIG HÄR ⬇', 24);
+  makeChevronTrail(scene, chevrons, [[LC.x - 28, LC.z + 14], [6495, 40], [6470, 62], [SX, HZ - 60]], 9);
+
+  // Derby-fållan får samma hjälp
+  beacons.push(makeBeacon(scene, AC.x - AR - 13, AC.z, 0xff5a3c));
+  makeChevronTrail(scene, chevrons, [[LC.x - 40, LC.z - 30], [6420, -52], [6330, -66], [6250, -34], [AC.x - AR - 32, AC.z]], 8);
+
   const raceZone = {
     id: 'race', namn: 'LÅNGRACET', mode: 'race',
     pts: racePts, cum: racePath.cum, total: racePath.total,
@@ -264,22 +399,9 @@ export function buildWorld(ctx) {
   };
 
   // ============ SKROTARENAN ============
-  const dirtTex = canvasTex(128, 128, (c) => {
-    c.fillStyle = '#a8875c'; c.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 900; i++) {
-      c.fillStyle = ['#9c7c52', '#b39064', '#8f7048', '#bd9a6e'][i % 4];
-      c.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
-    }
-    c.strokeStyle = 'rgba(80,60,35,0.3)';
-    for (let i = 0; i < 14; i++) {
-      c.beginPath();
-      c.arc(64, 64, 12 + i * 4, Math.random() * 6, Math.random() * 6 + 2);
-      c.stroke();
-    }
-  }, [3, 3]);
   const arenaFloor = new THREE.Mesh(
     new THREE.CircleGeometry(AR, 48),
-    new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1 })
+    new THREE.MeshStandardMaterial({ ...pbr('gravelly_sand', 7, 7), roughness: 1 })
   );
   arenaFloor.rotation.x = -Math.PI / 2;
   arenaFloor.position.set(AC.x, 0.02, AC.z);
@@ -349,7 +471,7 @@ export function buildWorld(ctx) {
   // ============ LOBBYN ============
   const plaza = new THREE.Mesh(
     new THREE.CircleGeometry(62, 48),
-    new THREE.MeshStandardMaterial({ color: 0x35383e, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ ...pbr('asphalt_02', 11, 11), color: 0x8f9296, roughness: 0.95 })
   );
   plaza.rotation.x = -Math.PI / 2;
   plaza.position.set(LC.x, 0.02, LC.z);
@@ -450,10 +572,129 @@ export function buildWorld(ctx) {
     },
   };
 
+  // ============ BANVARIANTER — röstas fram, allt efter grindarna byts ============
+  const variants = [
+    { namn: 'KLASSIKERN', trafik: 9, tagPeriod: 80, meshes: [], fixed: [], props: [], boostPads: [] },
+    { namn: 'TRAFIKKAOS', trafik: 24, tagPeriod: 48, meshes: [], fixed: [], props: [], boostPads: [] },
+    { namn: 'RAMPFESTEN', trafik: 4, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [] },
+  ];
+  const vMesh = (v, m) => { scene.add(m); v.meshes.push(m); return m; };
+  const vFixed = (v, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0) => {
+    const r = fixedBox(ctx, x, y, z, hx, hy, hz, yaw, noDmg, rotX, rotZ);
+    if (r) v.fixed.push({ body: r.body, x, y, z });
+  };
+  const vRefuge = (v, rx, off, len) => {
+    vFixed(v, rx, 0.5, HZ + off, len / 2, 0.5, 0.7);
+    const island = new THREE.Mesh(new THREE.BoxGeometry(len, 1, 1.4), refM);
+    island.position.set(rx, 0.5, HZ + off);
+    island.castShadow = true;
+    vMesh(v, island);
+    for (const e of [-1, 1]) {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.15, 1.5), stripeMat());
+      cap.position.set(rx + e * (len / 2 + 0.3), 0.57, HZ + off);
+      vMesh(v, cap);
+    }
+  };
+  const vRamp = (v, rx, off) => {
+    const ang = 0.16;
+    vFixed(v, rx, 0.62, HZ + off, 4.5, 0.15, 7, 0, true, 0, -ang);
+    const rm = new THREE.Mesh(
+      new THREE.BoxGeometry(9, 0.3, 14),
+      new THREE.MeshStandardMaterial({ color: 0x565c64, roughness: 0.8 })
+    );
+    rm.position.set(rx, 0.62, HZ + off);
+    rm.rotation.z = -ang;
+    rm.castShadow = true;
+    vMesh(v, rm);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 14), stripeMat());
+    edge.position.set(rx - 4.4, 1.32, HZ + off);
+    edge.rotation.z = -ang;
+    vMesh(v, edge);
+  };
+  const vBoost = (v, bx, bz) => {
+    v.boostPads.push({ x: bx, z: bz, hl: 5, hw: 3.2 });
+    const pad = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 6.4),
+      new THREE.MeshBasicMaterial({ map: boostTex, transparent: true, opacity: 0.9 })
+    );
+    pad.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    pad.position.set(bx, 0.055, bz);
+    vMesh(v, pad);
+  };
+  const vProp = (v, typ, px, pz) => {
+    const p = makeProp(ctx, scene, typ, px, pz);
+    p.ox = px; p.oz = pz;
+    props.push(p);
+    v.props.push(p);
+  };
+
+  // KLASSIKERN: blandat allt
+  {
+    const v = variants[0];
+    for (let k = 0; k < 15; k++) {
+      const rx = SX - 800 - k * 780 - hash(k) * 160;
+      if (rx < SX - CONF.RACE_DIST + 400) break;
+      if (Math.abs(rx - TRAIN_X) < 60) continue;
+      vRefuge(v, rx, (k % 3 === 2) ? (k % 2 ? 4.5 : -4.5) : 0, 24 + hash(k + 50) * 16);
+    }
+    for (const [km, off] of [[3.5, -11], [7.2, 11], [10.4, -11]]) vRamp(v, SX - km * 1000, off);
+    for (let k = 1; k <= 10; k++) vBoost(v, SX - k * 1200 + 320, HZ + (k % 2 ? 7 : -7));
+    [[2.1, [-14, -11, 12]], [4.4, [9, 13, -13]], [6.6, [-10, 15, 8]], [8.9, [12, -12, -15]]].forEach(([km, offs], ci) => {
+      offs.forEach((off, i) => vProp(v, (ci + i) % 2 ? 'tunna' : 'kon', SX - km * 1000 + hash(ci * 7 + i) * 30, HZ + off));
+    });
+  }
+  // TRAFIKKAOS: lång mittbarriär med luckor + massor av trafik (styrs via v.trafik)
+  {
+    const v = variants[1];
+    for (let k = 0; k < 12; k++) {
+      const rx = SX - 900 - k * 1000;
+      if (rx < SX - CONF.RACE_DIST + 400) break;
+      if (Math.abs(rx - TRAIN_X) < 90) continue;
+      vRefuge(v, rx, 0, 70);
+    }
+    for (let k = 1; k <= 5; k++) vBoost(v, SX - k * 2300 + 300, HZ - 12);
+    [[5.5, [12, -13]]].forEach(([km, offs], ci) => {
+      offs.forEach((off, i) => vProp(v, i % 2 ? 'tunna' : 'kon', SX - km * 1000 + hash(ci + i) * 20, HZ + off));
+    });
+  }
+  // RAMPFESTEN: ramper + boostar överallt
+  {
+    const v = variants[2];
+    for (let k = 0; k < 9; k++) {
+      vRamp(v, SX - 1200 - k * 1300, (k % 2 ? 11 : -11));
+    }
+    for (let k = 1; k <= 16; k++) vBoost(v, SX - k * 780 + 150, HZ + ((k % 3) - 1) * 11);
+    [[6, [0, 3]]].forEach(([km, offs], ci) => {
+      offs.forEach((off, i) => vProp(v, 'tunna', SX - km * 1000 + i * 8, HZ + off));
+    });
+  }
+
   let boardCache = ['', '', ''];
-  return {
+  const api = {
     zones: [raceZone, derbyZone],
-    lobby, props, displays,
+    lobby, props, displays, train,
+    boostPads: [],
+    variant: variants[0],
+    activeVariantIdx: 0,
+    setVariant(i) {
+      i = Math.max(0, Math.min(variants.length - 1, i | 0));
+      api.activeVariantIdx = i;
+      api.variant = variants[i];
+      api.boostPads = variants[i].boostPads;
+      variants.forEach((v, j) => {
+        const on = j === i;
+        for (const m of v.meshes) m.visible = on;
+        for (const f of v.fixed) f.body?.setTranslation({ x: f.x, y: on ? f.y : f.y - 500, z: f.z }, false);
+        for (const p of v.props) {
+          p.mesh.visible = on;
+          if (p.body) {
+            p.body.setTranslation({ x: p.ox, y: on ? 0.6 : -497, z: p.oz }, true);
+            p.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            p.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          }
+        }
+      });
+    },
     updateBoards(tLeft, raceRunning, derbyRunning) {
       const f = fmtTime(tLeft);
       const texts = [
@@ -471,8 +712,61 @@ export function buildWorld(ctx) {
       pads.forEach((p, i) => {
         p.ring.material.opacity = 0.45 + 0.3 * Math.sin(t * 3 + i);
       });
+      // Ledfyrar pulserar, pilarna "springer" mot fållan
+      const pulse = 0.14 + 0.1 * (1 + Math.sin(t * 2.2));
+      for (const b of beacons) b.opacity = pulse;
+      chevrons.forEach((c, i) => {
+        c.mat.opacity = 0.2 + 0.7 * Math.max(0, Math.sin(t * 2.6 - c.i * 0.55));
+      });
+      // Järnvägsljusen blinkar när tåget är på ingång
+      const blink = Math.sin(t * 9) > 0;
+      const trainOn = Math.abs(train.z) < 900;
+      for (const lm of crossingLights) lm.emissiveIntensity = trainOn && blink ? 2.4 : 0;
     },
   };
+  api.setVariant(0);
+  return api;
+}
+
+function makeBeacon(scene, x, z, color) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.4, 2.0, 70, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+  );
+  m.position.set(x, 35, z);
+  scene.add(m);
+  return m.material;
+}
+
+// Pil-spår på marken längs en polylinje
+function makeChevronTrail(scene, out, pts2, n) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-1.3, -1.1); shape.lineTo(0, 0.3); shape.lineTo(1.3, -1.1);
+  shape.lineTo(1.3, -0.2); shape.lineTo(0, 1.2); shape.lineTo(-1.3, -0.2);
+  shape.closePath();
+  const geo = new THREE.ShapeGeometry(shape);
+  geo.rotateX(-Math.PI / 2); // ligger platt, pekar mot -z
+  const lens = [0];
+  for (let i = 1; i < pts2.length; i++) {
+    lens.push(lens[i - 1] + Math.hypot(pts2[i][0] - pts2[i - 1][0], pts2[i][1] - pts2[i - 1][1]));
+  }
+  const total = lens[lens.length - 1];
+  for (let k = 0; k < n; k++) {
+    const d = (k + 0.5) / n * total;
+    let i = 0;
+    while (i < lens.length - 2 && lens[i + 1] < d) i++;
+    const t = (d - lens[i]) / Math.max(1e-6, lens[i + 1] - lens[i]);
+    const x = pts2[i][0] + (pts2[i + 1][0] - pts2[i][0]) * t;
+    const z = pts2[i][1] + (pts2[i + 1][1] - pts2[i][1]) * t;
+    const dx = pts2[i + 1][0] - pts2[i][0], dz = pts2[i + 1][1] - pts2[i][1];
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffa02e, transparent: true, opacity: 0.5, depthWrite: false });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, 0.06, z);
+    m.rotation.y = Math.atan2(-dx, -dz);
+    m.scale.setScalar(1.6);
+    scene.add(m);
+    out.push({ mat, i: k });
+  }
 }
 
 function fmtTime(t) {
@@ -520,7 +814,10 @@ function buildRibbon(pts, path, width, tex) {
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 1, side: THREE.DoubleSide }));
+  const mat = tex.map
+    ? new THREE.MeshStandardMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: 1, side: THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({ map: tex, roughness: 1, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -707,6 +1004,11 @@ function makeGateRow(ctx, scene, defs, halfW) {
     mesh.rotation.y = g.yaw;
     mesh.castShadow = true;
     scene.add(mesh);
+    // Ljusramp: röd = stängd, grön = öppen (byts i stepGates)
+    const lampM = new THREE.MeshStandardMaterial({ color: 0x1a0000, emissive: 0xff3020, emissiveIntensity: 1.6 });
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 - 0.5, 0.22, 0.6), lampM);
+    lamp.position.y = 1.35;
+    mesh.add(lamp);
     let body = null;
     if (ctx.world) {
       const q = new THREE.Quaternion().setFromAxisAngle(UP, g.yaw);
@@ -720,7 +1022,7 @@ function makeGateRow(ctx, scene, defs, halfW) {
         body
       );
     }
-    gates.push({ mesh, body, x: g.x, z: g.z, closedY: 1.2, openY: -1.7, cur: 1.2 });
+    gates.push({ mesh, body, lampM, x: g.x, z: g.z, closedY: 1.2, openY: -1.7, cur: 1.2 });
   }
   return gates;
 }
@@ -731,6 +1033,7 @@ export function stepGates(zone, dt) {
     g.cur += (target - g.cur) * Math.min(1, 3.5 * dt);
     g.mesh.position.y = g.cur;
     g.body?.setNextKinematicTranslation({ x: g.x, y: g.cur, z: g.z });
+    if (g.lampM) g.lampM.emissive.setHex(zone.gatesOpen ? 0x2aff5a : 0xff3020);
   }
 }
 
