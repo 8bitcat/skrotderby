@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skrotderby</title>
+<meta name="description" content="Skrotderby — 3D-destruction-derby-racing i multiplayer där varenda del kan flyga av.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏁</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" style="display:none">
+  <div id="raceinfo"></div>
+  <div id="roomcode" style="display:none"></div>
+  <div id="announce"></div>
+  <div id="toasts"></div>
+  <div id="speed"><b id="speedval">0</b><span>km/h</span></div>
+  <div id="status">
+    <div id="carname"></div>
+    <div id="healthbar"><i id="healthfill"></i></div>
+    <div id="score"></div>
+  </div>
+  <div id="hint">W/S gas &amp; broms · A/D styr · Space handbroms · R vänd upp · C kamera · M ljud · 1–6 byt bil (ej i lopp)</div>
+</div>
+
+<div id="menu">
+  <div class="panel">
+    <h1>🏁 SKROTDERBY</h1>
+    <p class="tag">Spawna in som bil och kör runt i lobbyn. Ställ dig bakom grindarna — nytt race varje minut, och du kan alltid köra in mitt i ett lopp. Sist i fältet åker fortast, så klungan håller ihop. Eller ta rampen in i skrotarenan och slå sönder allt som rullar.</p>
+    <label class="namelabel">Ditt namn <input id="namein" maxlength="12" autocomplete="off" placeholder="Förare"></label>
+    <div id="carselect"></div>
+    <div class="btnrow">
+      <button id="bhost" class="btn big">SKAPA SPEL</button>
+      <div class="joinrow">
+        <input id="codein" maxlength="4" placeholder="KOD" autocomplete="off" spellcheck="false">
+        <button id="bjoin" class="btn">GÅ MED</button>
+      </div>
+      <button id="bsolo" class="btn ghost">KÖR SJÄLV (med bottar)</button>
+    </div>
+    <p id="netstatus"></p>
+  </div>
+</div>
+
+<div id="loading"><div>Laddar fysikmotorn …</div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,407 @@
+// Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
+// så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
+import * as THREE from 'three';
+import { CONF } from './config.js';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js';
+
+const UP = new THREE.Vector3(0, 1, 0);
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
+      _d = new THREE.Vector3(), _e = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+
+let seq = 0;
+
+export function spawnY(def) {
+  return def.wheelR + (def.susRest || 0.42) + def.dims.h * 0.5 + 0.2;
+}
+
+export class Car {
+  constructor(ctx, def, pos, heading, opts = {}) {
+    this.ctx = ctx;
+    this.def = def;
+    this.defId = opts.defId ?? 0;
+    this.id = opts.id ?? ++seq;
+    this.owner = opts.owner ?? null;        // null=bot, 'local'=värdens spelare, annars nät-id
+    this.isPlayer = this.owner === 'local';
+    this.name = opts.name || def.namn;
+
+    this.health = def.health; this.maxHealth = def.health;
+    this.wrecked = false; this.deadT = 0; this.exploded = false; this.respawnAfter = 4;
+    this.speedMult = 1; this.turboT = 0; this.flipT = 0; this.dmgCooldown = 0;
+    this.score = 0; this.racing = null; this.raceCooldown = 0; this.disposed = false;
+    this.input = { throttle: 0, steer: 0, handbrake: false };
+    this.steerCur = 0; this.speed = 0; this.absSpeed = 0; this.grounded = false;
+    this._smokeAcc = 0;
+
+    this.pos = new THREE.Vector3().copy(pos);
+    this.quat = new THREE.Quaternion().setFromAxisAngle(UP, heading);
+    this.vel = new THREE.Vector3(); this.angv = new THREE.Vector3();
+    this.fwd = new THREE.Vector3(0, 0, -1);
+    this.up = new THREE.Vector3(0, 1, 0);
+    this.right = new THREE.Vector3(1, 0, 0);
+    this.comOffset = new THREE.Vector3(0, -def.dims.h * 0.3, 0);
+    this._wf = new THREE.Vector3(); this._wr = new THREE.Vector3(); this._vc = new THREE.Vector3();
+
+    this._buildBody();
+    this._buildWheels();
+    this._buildVisual();
+    ctx.allCars.push(this);
+  }
+
+  _buildBody() {
+    const { RAPIER, world } = this.ctx;
+    const { l, w, h } = this.def.dims;
+    const rbd = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(this.pos.x, this.pos.y, this.pos.z)
+      .setRotation({ x: this.quat.x, y: this.quat.y, z: this.quat.z, w: this.quat.w })
+      .setCanSleep(false).setAngularDamping(1.05).setLinearDamping(0.06);
+    this.body = world.createRigidBody(rbd);
+    const cd = RAPIER.ColliderDesc.cuboid(w / 2, h / 2, l / 2)
+      .setTranslation(0, -h * 0.3, 0)
+      .setMass(this.def.mass)
+      .setFriction(0.35).setRestitution(0.35);
+    this.collider = world.createCollider(cd, this.body);
+    this.ctx.carsByCollider.set(this.collider.handle, this);
+    this.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  }
+
+  _buildWheels() {
+    const def = this.def;
+    const k = def.mass * 26, c = def.mass * 3.2;
+    this.wheels = wheelAnchors(def).map((a) => {
+      const vis = buildWheelMesh(def);
+      return {
+        anchorL: new THREE.Vector3(a.x, a.y, a.z), steered: a.steered, powered: a.powered,
+        radius: def.wheelR, susRest: def.susRest || 0.42, k, c,
+        health: 30 * (def.health / 100), detached: false, grounded: false,
+        load: 0, visLen: (def.susRest || 0.42) + def.wheelR, spin: 0,
+        holder: vis.holder, spinMesh: vis.spin,
+      };
+    });
+  }
+
+  _buildVisual() {
+    const built = buildCarVisual(this.def);
+    this.group = built.group;
+    this.parts = built.parts;
+    this.bodyMeshes = built.bodyMeshes;
+    for (const w of this.wheels) {
+      w.holder.position.copy(w.anchorL);
+      this.group.add(w.holder);
+    }
+    if (!this.isPlayer) {
+      this.label = makeNameSprite(this.name);
+      this.label.position.set(0, this.def.dims.h + 0.9, 0);
+      this.group.add(this.label);
+    }
+    this.group.position.copy(this.pos);
+    this.group.quaternion.copy(this.quat);
+    this.ctx.scene.add(this.group);
+  }
+
+  velAt(p, out) {
+    _e.copy(this.comOffset).applyQuaternion(this.quat).add(this.pos);
+    out.copy(p).sub(_e);
+    out.crossVectors(this.angv, out);
+    return out.add(this.vel);
+  }
+
+  physicsStep(dt) {
+    const rb = this.body, def = this.def;
+    const t = rb.translation(); this.pos.set(t.x, t.y, t.z);
+    const r = rb.rotation(); this.quat.set(r.x, r.y, r.z, r.w);
+    const lv = rb.linvel(); this.vel.set(lv.x, lv.y, lv.z);
+    const av = rb.angvel(); this.angv.set(av.x, av.y, av.z);
+    this.fwd.set(0, 0, -1).applyQuaternion(this.quat);
+    this.up.set(0, 1, 0).applyQuaternion(this.quat);
+    this.right.set(1, 0, 0).applyQuaternion(this.quat);
+    const vFwd = this.vel.dot(this.fwd);
+    this.speed = vFwd; this.absSpeed = this.vel.length();
+    if (this.dmgCooldown > 0) this.dmgCooldown -= dt;
+    if (this.turboT > 0) this.turboT -= dt;
+    if (this.raceCooldown > 0) this.raceCooldown -= dt;
+
+    // Ramlade ur världen?
+    if (this.pos.y < -25) this.resetTo(new THREE.Vector3(-105, 3, 40), 0);
+
+    if (this.wrecked) return;
+
+    this.flipT = this.up.y < 0.25 ? this.flipT + dt : 0;
+
+    // Styrning (mindre utslag i hög fart)
+    const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.05);
+    const targetSteer = this.input.steer * steerMax;
+    this.steerCur += (targetSteer - this.steerCur) * Math.min(1, 9 * dt);
+
+    // Motor och broms — skadad motor orkar mindre
+    const hf = 0.45 + 0.55 * Math.max(0, this.health) / this.maxHealth;
+    const mult = this.speedMult * (this.turboT > 0 ? 1 + CONF.COMEBACK_TURBO : 1);
+    const vmax = def.maxKmh / 3.6 * mult;
+    let drive = 0, brake = 0;
+    const th = this.input.throttle;
+    if (th > 0.01) {
+      if (vFwd < vmax) drive = th * def.power * mult * hf;
+    } else if (th < -0.01) {
+      if (vFwd > 1.5) brake = def.power * 1.5 * (-th);
+      else if (vFwd > -11) drive = th * def.power * 0.55 * hf;
+    }
+    const nPow = this.wheels.filter(w => w.powered && !w.detached).length || 1;
+
+    let grounded = 0;
+    for (const w of this.wheels) {
+      if (w.detached) continue;
+      _a.copy(w.anchorL).applyQuaternion(this.quat).add(this.pos);
+      _b.copy(this.up).negate();
+      const maxToi = w.susRest + w.radius;
+      this.ray.origin.x = _a.x; this.ray.origin.y = _a.y; this.ray.origin.z = _a.z;
+      this.ray.dir.x = _b.x; this.ray.dir.y = _b.y; this.ray.dir.z = _b.z;
+      const hit = this.ctx.world.castRay(this.ray, maxToi, true, undefined, undefined, undefined, rb);
+      if (!hit) {
+        w.grounded = false; w.load = 0;
+        w.visLen += (maxToi - w.visLen) * Math.min(1, 8 * dt);
+        continue;
+      }
+      const len = (hit.toi !== undefined) ? hit.toi : hit.timeOfImpact;
+      grounded++; w.grounded = true; w.visLen = len;
+
+      // Fjädring
+      const comp = maxToi - len;
+      const vAt = this.velAt(_a, _c);
+      const vDown = vAt.dot(_b);
+      let F = w.k * comp + w.c * vDown;
+      F = Math.max(0, Math.min(F, def.mass * CONF.GRAV * 0.9));
+      w.load = F;
+      _d.copy(_b).multiplyScalar(-F * dt);
+      rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _a.x, y: _a.y, z: _a.z }, true);
+
+      // Däckkrafter i kontaktpunkten
+      _c.copy(_b).multiplyScalar(len).add(_a); // kontaktpunkt
+      this._wf.copy(this.fwd); this._wr.copy(this.right);
+      if (w.steered && Math.abs(this.steerCur) > 0.001) {
+        this._wf.applyAxisAngle(this.up, this.steerCur);
+        this._wr.applyAxisAngle(this.up, this.steerCur);
+      }
+      const vC = this.velAt(_c, this._vc);
+      const vF2 = vC.dot(this._wf);
+      const vS = vC.dot(this._wr);
+
+      let longImp = 0;
+      if (drive && w.powered) longImp += (drive / nPow) * dt;
+      if (brake) longImp += -Math.sign(vF2) * Math.min((brake / 4) * dt, Math.abs(vF2) * def.mass / 4);
+      const capL = def.grip * 1.15 * F * dt * 1.4;
+      longImp = Math.max(-capL, Math.min(capL, longImp));
+
+      const isRear = w.anchorL.z > 0;
+      const muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip;
+      let latImp = -vS * def.mass / 4;
+      const capS = muS * F * dt;
+      latImp = Math.max(-capS, Math.min(capS, latImp));
+
+      _d.copy(this._wf).multiplyScalar(longImp).addScaledVector(this._wr, latImp);
+      rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _c.y, z: _c.z }, true);
+      w.spin += vF2 / w.radius * dt;
+    }
+    this.grounded = grounded > 0;
+  }
+
+  applyDamage(amount, point, attacker) {
+    if (this.wrecked || this.disposed || this.dmgCooldown > 0) return 0;
+    this.dmgCooldown = CONF.DMG_COOLDOWN;
+    amount = Math.min(CONF.DMG_MAX, amount);
+    this.health -= amount * 0.55;
+    if (attacker && !attacker.disposed) attacker.score += Math.round(amount);
+
+    // Vilka delar sitter närmast smällen?
+    _q.copy(this.quat).invert();
+    _a.set(point.x, point.y, point.z).sub(this.pos).applyQuaternion(_q);
+    const cands = [];
+    for (const p of this.parts) if (p.attached) cands.push({ p, d: _a.distanceTo(p.pos), wheel: false });
+    this.wheels.forEach((w, i) => {
+      if (!w.detached) cands.push({ w, i, d: _a.distanceTo(w.anchorL) * 1.3, wheel: true });
+    });
+    cands.sort((x, y) => x.d - y.d);
+    const shares = [0.95, 0.5];
+    for (let s = 0; s < 2 && s < cands.length; s++) {
+      const c = cands[s], dmg = amount * shares[s];
+      if (c.wheel) {
+        c.w.health -= dmg;
+        if (c.w.health <= 0) this.detachWheel(c.i);
+      } else {
+        c.p.health -= dmg;
+        if (c.p.health <= 0) this.detachPart(c.p);
+        else if (!c.p.drooped && c.p.health < c.p.maxHealth * 0.55) {
+          // Bucklig del som hänger snett
+          c.p.drooped = true;
+          c.p.mesh.rotation.x += (Math.random() - 0.5) * 0.24;
+          c.p.mesh.rotation.z += (Math.random() - 0.5) * 0.2;
+          c.p.mesh.position.y -= 0.03;
+        }
+      }
+    }
+    if (this.health <= 0) this.wreck();
+    return amount;
+  }
+
+  _spawnLoose(obj3d, size, massGuess, extraUp = 0) {
+    const { RAPIER, world, scene } = this.ctx;
+    obj3d.updateWorldMatrix(true, false);
+    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+    obj3d.matrixWorld.decompose(wp, wq, ws);
+    if (obj3d.parent) obj3d.parent.remove(obj3d);
+    scene.add(obj3d);
+    obj3d.position.copy(wp); obj3d.quaternion.copy(wq);
+    const vx = this.vel.x + rnd(-2.5, 2.5);
+    const vy = Math.max(1, this.vel.y) + rnd(2.5, 5.5) + extraUp;
+    const vz = this.vel.z + rnd(-2.5, 2.5);
+    const rbd = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(wp.x, wp.y, wp.z)
+      .setRotation({ x: wq.x, y: wq.y, z: wq.z, w: wq.w })
+      .setLinvel(vx, vy, vz)
+      .setAngvel({ x: rnd(-6, 6), y: rnd(-6, 6), z: rnd(-6, 6) });
+    const body = world.createRigidBody(rbd);
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(Math.max(0.05, size.x / 2 * 0.85), Math.max(0.05, size.y / 2 * 0.85), Math.max(0.05, size.z / 2 * 0.85))
+        .setMass(massGuess).setFriction(0.6).setRestitution(0.35),
+      body
+    );
+    this.ctx.addLoose({ mesh: obj3d, body, life: CONF.LOOSE_LIFE });
+    return { pos: wp, vel: { x: vx, y: vy, z: vz } };
+  }
+
+  detachPart(p, extraUp = 0) {
+    if (!p.attached) return;
+    p.attached = false;
+    const mass = Math.min(38, Math.max(6, p.size.x * p.size.y * p.size.z * 90));
+    const info = this._spawnLoose(p.mesh, p.size, mass, extraUp);
+    this.ctx.particles.sparks(info.pos, 10, 0xffb347, 7);
+    this.ctx.onDetach?.(this, p.name, info.pos, info.vel, p.size);
+  }
+
+  detachWheel(i, extraUp = 0) {
+    const w = this.wheels[i];
+    if (w.detached) return;
+    w.detached = true;
+    // Klotformad kollider — hjulet rullar/studsar iväg
+    const { RAPIER, world, scene } = this.ctx;
+    const obj3d = w.holder;
+    obj3d.updateWorldMatrix(true, false);
+    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+    obj3d.matrixWorld.decompose(wp, wq, ws);
+    if (obj3d.parent) obj3d.parent.remove(obj3d);
+    scene.add(obj3d);
+    obj3d.position.copy(wp); obj3d.quaternion.copy(wq);
+    const rbd = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(wp.x, wp.y, wp.z)
+      .setRotation({ x: wq.x, y: wq.y, z: wq.z, w: wq.w })
+      .setLinvel(this.vel.x + rnd(-3, 3), Math.max(1, this.vel.y) + rnd(2, 5) + extraUp, this.vel.z + rnd(-3, 3))
+      .setAngvel({ x: rnd(-8, 8), y: rnd(-4, 4), z: rnd(-8, 8) });
+    const body = world.createRigidBody(rbd);
+    world.createCollider(
+      RAPIER.ColliderDesc.ball(w.radius * 0.9).setMass(16).setFriction(0.8).setRestitution(0.45),
+      body
+    );
+    this.ctx.addLoose({ mesh: obj3d, body, life: CONF.LOOSE_LIFE });
+    this.ctx.particles.sparks(wp, 12, 0xffb347, 8);
+    this.ctx.onDetach?.(this, 'hjul' + i, wp, body.linvel(), new THREE.Vector3(w.radius * 2, w.radius * 2, w.radius * 2));
+  }
+
+  wreck() {
+    if (this.wrecked) return;
+    this.wrecked = true;
+    this.health = 0;
+    this.deadT = 0;
+    this.body.setAngularDamping(1.5);
+    this.body.setLinearDamping(0.8);
+    this.ctx.onWreck?.(this);
+  }
+
+  // Grafik + vrak-tidslinje (renderingstakt)
+  update(dt) {
+    this.group.position.copy(this.pos);
+    this.group.quaternion.copy(this.quat);
+    for (const w of this.wheels) {
+      if (w.detached) continue;
+      w.holder.position.set(w.anchorL.x, w.anchorL.y - (w.visLen - w.radius), w.anchorL.z);
+      w.holder.rotation.y = w.steered ? this.steerCur : 0;
+      w.spinMesh.rotation.x = w.spin;
+    }
+
+    const frac = this.health / this.maxHealth;
+    if (!this.wrecked && frac < 0.45) {
+      this._smokeAcc += dt * (0.5 - frac) * 14;
+      while (this._smokeAcc > 1) {
+        this._smokeAcc -= 1;
+        _a.set(0, this.def.dims.h * 0.3, -this.def.dims.l * 0.3).applyQuaternion(this.quat).add(this.pos);
+        this.ctx.particles.smoke(_a, { color: 0x555555, size: 0.9, life: 1.4 });
+      }
+    }
+    if (this.wrecked) {
+      this.deadT += dt;
+      this._smokeAcc += dt * 20;
+      while (this._smokeAcc > 1) {
+        this._smokeAcc -= 1;
+        _a.set(rnd(-0.4, 0.4), this.def.dims.h * 0.4, rnd(-1, 0.4)).applyQuaternion(this.quat).add(this.pos);
+        this.ctx.particles.smoke(_a, {
+          color: Math.random() < 0.45 ? 0xff7722 : 0x333333,
+          size: 1.1, life: 1.1, vy: 2.2,
+        });
+      }
+      if (!this.exploded && this.deadT > 1.6) {
+        this.exploded = true;
+        for (const p of this.parts) if (p.attached) this.detachPart(p, 6);
+        for (let i = 0; i < 4; i++) this.detachWheel(i, 4);
+        for (const m of this.bodyMeshes) m.material.color?.setHex(0x181818);
+        this.body.applyImpulse({ x: 0, y: this.def.mass * 4.5, z: 0 }, true);
+        this.ctx.particles.sparks(this.pos, 60, 0xffaa33, 14);
+        this.ctx.audio.boom(this.isPlayer ? 1 : 0.55);
+        this.ctx.onBoom?.(this);
+      }
+    }
+  }
+
+  resetUpright(turbo = false) {
+    const yaw = Math.atan2(-this.fwd.x, -this.fwd.z);
+    _q.setFromAxisAngle(UP, yaw);
+    this.body.setTranslation({ x: this.pos.x, y: this.pos.y + 1.4, z: this.pos.z }, true);
+    this.body.setRotation({ x: _q.x, y: _q.y, z: _q.z, w: _q.w }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.steerCur = 0;
+    this.flipT = 0;
+    if (turbo) this.turboT = CONF.COMEBACK_T;
+  }
+
+  resetTo(pos, heading) {
+    _q.setFromAxisAngle(UP, heading);
+    this.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+    this.body.setRotation({ x: _q.x, y: _q.y, z: _q.z, w: _q.w }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.steerCur = 0; this.flipT = 0;
+  }
+
+  partMask() {
+    let m = 0;
+    this.parts.forEach((p, i) => { if (p.attached) m |= (1 << i); });
+    return m;
+  }
+
+  wheelMask() {
+    let m = 0;
+    this.wheels.forEach((w, i) => { if (!w.detached) m |= (1 << i); });
+    return m;
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.ctx.raceMgr?.dropCar(this);
+    this.ctx.carsByCollider.delete(this.collider.handle);
+    this.ctx.world.removeRigidBody(this.body);
+    this.ctx.scene.remove(this.group);
+    const idx = this.ctx.allCars.indexOf(this);
+    if (idx >= 0) this.ctx.allCars.splice(idx, 1);
+    this.ctx.onDespawnCar?.(this);
+  }
+}

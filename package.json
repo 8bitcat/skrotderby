@@ -1,0 +1,10 @@
+{
+  "name": "skrotderby",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Skrotderby — 3D destruction-derby-racing i multiplayer, three.js + Rapier + PeerJS",
+  "scripts": {
+    "start": "npx http-server -p 8123 -c-1"
+  }
+}
