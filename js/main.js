@@ -93,7 +93,74 @@ async function startClient() {
   starting = false;
 }
 
+// Publik server: alla som öppnar sidan hamnar i samma värld.
+// Finns ingen värd blir du värd; annars ansluter du som gäst.
+const PUBLIC_CODE = 'PUBLIK';
+
+async function startPublic() {
+  if (starting || game) return;
+  starting = true;
+  app.audio.init();
+  const name = hud.getName();
+  const defId = hud.selectedDef;
+
+  if (!peerAvailable()) {
+    hud.setNetStatus('Ingen internetanslutning — kör solo med bottar.', true);
+    try {
+      await loadRapier();
+      game = new HostGame(app, { RAPIER, defId, name, net: null });
+      window.__game = game;
+      hud.startGame(null);
+    } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }
+    starting = false;
+    return;
+  }
+
+  hud.setNetStatus('Letar efter den publika servern …');
+  try {
+    const net = await ClientNet.join(PUBLIC_CODE);
+    game = new ClientGame(app, { net, name, defId, publicMode: true });
+    hud.startGame(PUBLIC_CODE);
+    starting = false;
+    return;
+  } catch { /* ingen värd ännu — vi tar värdskapet */ }
+
+  hud.setNetStatus('Ingen värd online — du blir värd för den publika servern …');
+  try {
+    await loadRapier();
+    const net = await HostNet.create(PUBLIC_CODE);
+    game = new HostGame(app, { RAPIER, defId, name, net });
+    window.__game = game;
+    hud.startGame(PUBLIC_CODE);
+  } catch {
+    // Förlorade kapplöpningen om värdskapet — någon annan hann före; anslut dit.
+    try {
+      const net = await ClientNet.join(PUBLIC_CODE);
+      game = new ClientGame(app, { net, name, defId, publicMode: true });
+      hud.startGame(PUBLIC_CODE);
+    } catch (e) {
+      hud.setNetStatus('Kunde inte nå publika servern (' + (e?.message || e?.type || 'okänt fel') + ') — kör solo.', true);
+      try {
+        await loadRapier();
+        game = new HostGame(app, { RAPIER, defId, name, net: null });
+        window.__game = game;
+        hud.startGame(null);
+      } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }
+    }
+  }
+  starting = false;
+}
+
+hud.el.bpublic.addEventListener('click', startPublic);
 hud.el.bhost.addEventListener('click', () => startHost(true));
+
+// Auto-återinträde i publika rummet efter värd-tapp (flaggan sätts före omladdning)
+try {
+  if (sessionStorage.getItem('skrotderby_auto') === '1') {
+    sessionStorage.removeItem('skrotderby_auto');
+    setTimeout(startPublic, 800);
+  }
+} catch { /* privat läge */ }
 hud.el.bsolo.addEventListener('click', () => startHost(false));
 hud.el.bjoin.addEventListener('click', startClient);
 hud.el.codein.addEventListener('keydown', (e) => { if (e.key === 'Enter') startClient(); });

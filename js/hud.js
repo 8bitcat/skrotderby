@@ -12,7 +12,7 @@ export class Hud {
       score: $('score'), hint: $('hint'), carselect: $('carselect'),
       startbtn: $('startbtn'), roomcode: $('roomcode'),
       namein: $('namein'), codein: $('codein'),
-      bhost: $('bhost'), bjoin: $('bjoin'), bsolo: $('bsolo'),
+      bpublic: $('bpublic'), bhost: $('bhost'), bjoin: $('bjoin'), bsolo: $('bsolo'),
       netstatus: $('netstatus'),
     };
     this.selectedDef = 1;
@@ -63,7 +63,7 @@ export class Hud {
     this.el.menu.style.display = 'none';
     this.el.hud.style.display = 'block';
     if (roomCode) {
-      this.el.roomcode.textContent = 'Rumskod: ' + roomCode;
+      this.el.roomcode.textContent = roomCode === 'PUBLIK' ? '🌍 Publik server' : 'Rumskod: ' + roomCode;
       this.el.roomcode.style.display = 'block';
     }
   }

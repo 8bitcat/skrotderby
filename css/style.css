@@ -171,6 +171,9 @@ html, body {
 .card .stats .dim, .card .stats i span.dim { color: #3a414c; }
 
 .btnrow { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+.btnrow.secondary { margin-top: 10px; }
+.btnrow.secondary .btn { font-size: 13.5px; padding: 10px 16px; }
+.btnrow.secondary .joinrow input { width: 74px; font-size: 16px; }
 .btn {
   background: #e88b1e; color: #14171c;
   font-weight: 900; font-size: 16px; letter-spacing: 1px;

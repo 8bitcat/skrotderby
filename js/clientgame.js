@@ -10,7 +10,8 @@ import { Hud } from './hud.js';
 const _v = new THREE.Vector3();
 
 export class ClientGame {
-  constructor(app, { net, name, defId }) {
+  constructor(app, { net, name, defId, publicMode = false }) {
+    this.publicMode = publicMode;
     this.app = app;
     this.net = net;
     this.ctx = { scene: app.scene, world: null, RAPIER: null, noDmg: new Set() };
@@ -28,7 +29,14 @@ export class ClientGame {
     net.handlers.onData = (msg) => this.onData(msg);
     net.handlers.onClose = () => {
       this.connected = false;
-      this.app.hud.announce('Tappade kontakten med värden 😢');
+      if (this.publicMode) {
+        // Värden försvann — ladda om så tar någon (kanske du) över värdskapet
+        this.app.hud.announce('Värden försvann — startar om …');
+        try { sessionStorage.setItem('skrotderby_auto', '1'); } catch { /* ok */ }
+        setTimeout(() => window.location.reload(), 2500);
+      } else {
+        this.app.hud.announce('Tappade kontakten med värden 😢');
+      }
     };
     net.send({ t: 'hej', name, defId });
   }
