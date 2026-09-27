@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=7';
-import { Car, spawnY } from './vehicle.js?v=7';
-import { buildWorld, pathPointAt } from './world.js?v=7';
-import { RaceManager } from './race.js?v=7';
-import { Bots } from './ai.js?v=7';
-import { Traffic } from './traffic.js?v=7';
-import { Hud } from './hud.js?v=7';
+import { CONF, CARS, PROTO } from './config.js?v=8';
+import { Car, spawnY } from './vehicle.js?v=8';
+import { buildWorld, pathPointAt } from './world.js?v=8';
+import { RaceManager, nearestParam } from './race.js?v=8';
+import { Bots } from './ai.js?v=8';
+import { Traffic } from './traffic.js?v=8';
+import { Hud } from './hud.js?v=8';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -235,8 +235,33 @@ export class HostGame {
     };
   }
 
+  // Sida-mot-sida: när bilar ligger jämsides släpper offrets däckgrepp delvis
+  // så att man kan PUSHA motståndare i sidled och snurra dem (PIT-manöver!)
+  markSidePress() {
+    const cars = this.ctx.allCars;
+    for (const c of cars) c.sidePress = false;
+    for (let i = 0; i < cars.length; i++) {
+      const a = cars[i];
+      if (a.disposed) continue;
+      for (let j = i + 1; j < cars.length; j++) {
+        const b = cars[j];
+        if (b.disposed) continue;
+        const dx = b.pos.x - a.pos.x, dy = b.pos.y - a.pos.y, dz = b.pos.z - a.pos.z;
+        if (dx * dx + dz * dz > 40 || Math.abs(dy) > 2.5) continue;
+        const alongA = dx * a.fwd.x + dz * a.fwd.z;
+        const latA = dx * a.right.x + dz * a.right.z;
+        if (Math.abs(alongA) < a.def.dims.l * 0.62 &&
+            Math.abs(latA) < (a.def.dims.w + b.def.dims.w) / 2 + 0.55) {
+          a.sidePress = true;
+          b.sidePress = true;
+        }
+      }
+    }
+  }
+
   // ---------- Fysik ----------
   fixedStep(dt) {
+    this.markSidePress();
     for (const c of this.ctx.allCars) c.physicsStep(dt);
     this.raceMgr.stepGates(dt);
     this.stepTrain(dt);
@@ -437,6 +462,31 @@ export class HostGame {
     }
   }
 
+  // Banvakten: den som hamnar utanför banan lyfts in igen efter 4 s.
+  // Man ska ALLTID kunna komma tillbaka. (Navet vid depån är undantaget.)
+  handleOffTrack(dt) {
+    this._offT = (this._offT || 0) + dt;
+    if (this._offT < 0.25) return;
+    const step = this._offT;
+    this._offT = 0;
+    const z = this.worldApi.zones[0];
+    for (const c of this.ctx.allCars) {
+      if (c.disposed || c.wrecked || c.isTraffic) continue;
+      if (c.pos.x > CONF.STAGE_X - 140) { c.offTrackT = 0; continue; }
+      const np = nearestParam(z, c.pos, -1);
+      if (np.dist > z.width / 2 + 2) {
+        c.offTrackT = (c.offTrackT || 0) + step;
+        if (c.offTrackT > 4) {
+          c.offTrackT = 0;
+          const o = {};
+          pathPointAt(z, np.param, o);
+          c.resetTo(new THREE.Vector3(o.x, 1.6, o.z), Math.atan2(-o.tx, -o.tz));
+          if (c.owner !== null) this.notify(c, 'announce', '🚧 TILLBAKA PÅ BANAN!');
+        }
+      } else c.offTrackT = 0;
+    }
+  }
+
   handlePads(dt) {
     const check = (car, store) => {
       if (car.wrecked || car.disposed || car.racing) { store.padT = 0; return; }
@@ -487,6 +537,7 @@ export class HostGame {
     this.handleWipeouts();
     this.handleRespawns();
     this.handlePads(dt);
+    this.handleOffTrack(dt);
     this.handleReturnHome(dt);
 
     // Varning: 15 s kvar och du står inte i någon fålla

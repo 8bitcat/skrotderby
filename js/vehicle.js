@@ -1,8 +1,8 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=7';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=7';
+import { CONF } from './config.js?v=8';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=8';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
@@ -128,6 +128,8 @@ export class Car {
     if (this.wrecked) return;
 
     this.flipT = this.up.y < 0.25 ? this.flipT + dt : 0;
+    // friare rotation när någon trycker på sidan — spin-outs ska hända
+    rb.setAngularDamping(this.sidePress ? 0.45 : 0.8);
 
     // Styrning (mindre utslag i hög fart, men nog för att kontra i sladd)
     const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.035);
@@ -194,7 +196,8 @@ export class Car {
 
       // Lösare bakvagn → bilen driftar istället för att bita fast och välta
       const isRear = w.anchorL.z > 0;
-      const muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 0.84 : 1.0);
+      let muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 0.84 : 1.0);
+      if (this.sidePress) muS *= 0.48; // jämsides: man KAN pushas i sidled och snurras
       let latImp = -vS * def.mass / 4;
       const capS = muS * F * dt;
       latImp = Math.max(-capS, Math.min(capS, latImp));

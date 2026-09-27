@@ -2,8 +2,8 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=7';
-import { stepGates } from './world.js?v=7';
+import { CONF } from './config.js?v=8';
+import { stepGates } from './world.js?v=8';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -137,10 +137,6 @@ export class RaceManager {
       p.travel += d;
       p.lastParam = np.param;
 
-      if (np.dist > z.width / 2 + 6) {
-        p.offT += dt;
-        if (p.offT > 5) { this.leave(z, car, 'Du lämnade banan — ute ur racet'); continue; }
-      } else p.offT = 0;
 
       if (p.travel >= z.raceDist) {
         p.finished = true;

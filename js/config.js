@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 7;
+export const PROTO = 8;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -24,8 +24,8 @@ export const CONF = {
   // FARTSTEGEN: placeringen sätter toppfarten — ettan 210, tvåan 217, trean 224 …
   // ju längre bak, desto fortare, tills man är framme vid första plats.
   RACE_VMAX_BAS: 210,     // km/h för ledaren
-  RACE_VMAX_STEG: 9,      // +9 km/h per placering bakåt
-  RACE_POWER_STEG: 0.08,  // +8 % motorkraft per placering bakåt
+  RACE_VMAX_STEG: 13,     // +13 km/h per placering bakåt — ledaren jagas HÅRT, segern försvaras
+  RACE_POWER_STEG: 0.1,   // +10 % motorkraft per placering bakåt
   RACE_GAP_BONUS: 0.06,   // extra km/h per meter över 250 m-lucka (tak 55)
   POWER_MULT: 1.3,        // generellt kraftigare motorer — bilarna kändes sega
   COMEBACK_TURBO: 0.30,   // extra fart efter wipeout-uppställning
