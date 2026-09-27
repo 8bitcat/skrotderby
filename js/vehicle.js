@@ -1,8 +1,8 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=12';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=12';
+import { CONF } from './config.js?v=13';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=13';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),

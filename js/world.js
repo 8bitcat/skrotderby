@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=12';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=12';
+import { CONF, CARS } from './config.js?v=13';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=13';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -426,8 +426,8 @@ export function buildWorld(ctx) {
   ]);
   const raceGates = makeGateRow(ctx, scene, [-20, -12, -4, 4, 12, 20].map(dx => ({ x: SX + dx, z: HZ - 12.6, yaw: 0 })), 4);
   const raceGrid = [];
-  for (const zz of [HZ - 48, HZ - 40, HZ - 32, HZ - 24, HZ - 16]) for (const dx of [-15, -5, 5, 15]) {
-    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI }); // 20 rutor
+  for (const zz of [HZ - 48, HZ - 40, HZ - 32, HZ - 24, HZ - 16]) for (const dx of [-18, -10.8, -3.6, 3.6, 10.8, 18]) {
+    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI }); // 30 rutor
   }
 
   // === TYDLIG STARTFÅLLA: målad yta + ledfyr + pilar från lobbyn ===

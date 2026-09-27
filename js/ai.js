@@ -1,11 +1,12 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=12';
-import { Car, spawnY } from './vehicle.js?v=12';
-import { pathPointAt } from './world.js?v=12';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=13';
+import { Car, spawnY } from './vehicle.js?v=13';
+import { pathPointAt } from './world.js?v=13';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const dist2d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
 export class Bots {
@@ -53,20 +54,50 @@ export class Bots {
   // Bottar spawnar BAKOM startlinjen och jagar ikapp (catch-up gör resten)
   fillRace(zone, n) {
     const idle = this.list.filter(b => !b.car.racing && !b.car.wrecked && !b.car.disposed);
+    const race = zone.race;
+    const mid = race && race.t > 2 && zone.mode === 'race';
+    // Mitt i race: ledarens position (bottarna sätts runt täten, inte bakom)
+    let lead = null;
+    if (mid) {
+      for (const [c, p] of race.parts) {
+        if (p.finished || c.wrecked || c.disposed) continue;
+        if (!lead || p.travel > lead.p.travel) lead = { c, p };
+      }
+    }
+    // Vid start: lediga rutor i fållan
+    const freeSlots = [];
+    if (!mid && zone.mode === 'race') {
+      zone.grid.forEach((g, i) => {
+        const upptagen = this.ctx.allCars.some(c => !c.disposed && Math.hypot(c.pos.x - g.pos.x, c.pos.z - g.pos.z) < 3);
+        if (!upptagen) freeSlots.push(i);
+      });
+    }
     let placed = 0;
     for (const bot of idle) {
       if (placed >= n) break;
       const car = bot.car;
       this._releaseSlot(bot);
-      if (zone.mode === 'race') {
+      let travel = null;
+      if (zone.mode === 'race' && mid && lead) {
+        // från 90 m före ettan och bakåt genom klungan
+        const off = 90 - placed * 22 - Math.random() * 10;
+        pathPointAt(zone, lead.p.lastParam + off, this._o);
+        const lane = ((placed % 5) - 2) * 5.5;
+        car.resetTo(new THREE.Vector3(this._o.x - this._o.tz * lane, 1.4, this._o.z + this._o.tx * lane),
+          Math.atan2(-this._o.tx, -this._o.tz));
+        car.body.setLinvel({ x: this._o.tx * 45, y: 0, z: this._o.tz * 45 }, true); // flygande start
+        travel = Math.max(0, lead.p.travel + off);
+      } else if (zone.mode === 'race' && freeSlots.length) {
+        const g = zone.grid[freeSlots.shift()];
+        car.resetTo(new THREE.Vector3(g.pos.x, 1.4, g.pos.z), g.heading);
+      } else if (zone.mode === 'race') {
         pathPointAt(zone, zone.total - 26 - placed * 13, this._o);
-        const heading = Math.atan2(-this._o.tx, -this._o.tz);
-        car.resetTo(new THREE.Vector3(this._o.x + (placed % 2 ? 3.5 : -3.5), 1.4, this._o.z), heading);
+        car.resetTo(new THREE.Vector3(this._o.x + (placed % 2 ? 3.5 : -3.5), 1.4, this._o.z), Math.atan2(-this._o.tx, -this._o.tz));
       } else {
         const a = (placed / Math.max(1, n)) * Math.PI * 2;
         car.resetTo(new THREE.Vector3(zone.center.x + 24 * Math.cos(a), 1.4, zone.center.z + 24 * Math.sin(a)), a + Math.PI / 2);
       }
-      this.raceMgr.enroll(zone, car, false);
+      this.raceMgr.enroll(zone, car, false, travel);
       bot.state = 'RACE';
       placed++;
     }
@@ -255,23 +286,27 @@ export class Bots {
     const rx2 = -fz, rz2 = fx;
     const range = 20 + sp * 2.4;
     const r2max = (range + 20) * (range + 20);
-    const check = (px, pz, rad, w) => {
+    // closing = hur fort vi närmar oss hindret längs färdriktningen
+    const check = (px, pz, rad, w, closing) => {
       const dx = px - car.pos.x, dz = pz - car.pos.z;
       if (dx * dx + dz * dz > r2max) return;
       const along = dx * fx + dz * fz;
       if (along < 4 || along > range) return;
       const lat = dx * rx2 + dz * rz2;
       if (Math.abs(lat) > rad + 3) return;
-      const push = (1 - along / range) * w;
+      // bilar i samma fart: väj lite (eller tackla), men BROMSA ALDRIG i klungan
+      const urgency = clamp01(closing / 25);
+      const push = (1 - along / range) * w * (0.35 + 0.65 * urgency);
       bias += lat >= 0 ? -push : push;
-      if (Math.abs(lat) < rad + 1.2 && along < sp * 0.6 + 8) brake = Math.max(brake, 0.7);
+      if (closing > 12 && Math.abs(lat) < rad + 1.2 && along < closing * 1.1 + 6) brake = Math.max(brake, 0.7);
     };
     for (const o of this.ctx.allCars) {
       if (o === car || o.disposed) continue;
-      check(o.pos.x, o.pos.z, 1.6, 0.9);
+      const closing = (car.vel.x - o.vel.x) * fx + (car.vel.z - o.vel.z) * fz;
+      check(o.pos.x, o.pos.z, 1.6, 0.9, closing);
     }
     for (const o of (this.world.avoid || [])) {
-      check(o.x, o.z, o.r, 1.2);
+      check(o.x, o.z, o.r, 1.2, sp);
     }
     return { bias: Math.max(-1, Math.min(1, bias)), brake };
   }

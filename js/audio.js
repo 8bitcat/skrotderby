@@ -1,4 +1,4 @@
-import { SampleSfx } from './sfx.js?v=12';
+import { SampleSfx } from './sfx.js?v=13';
 // Procedurellt ljud via WebAudio — motor, krascher, explosioner, signaler
 // + loopande synthwave-musik (ingen musikfil, allt genereras).
 export class AudioFx {

@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 12;
+export const PROTO = 13;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -26,15 +26,15 @@ export const CONF = {
   RACE_VMAX_BAS: 210,     // km/h för ledaren
   RACE_VMAX_STEG: 13,     // +13 km/h per placering bakåt — ledaren jagas HÅRT, segern försvaras
   RACE_POWER_STEG: 0.1,   // +10 % motorkraft per placering bakåt
-  RACE_GAP_BONUS: 0.06,   // extra km/h per meter över 250 m-lucka (tak 55)
+  RACE_GAP_BONUS: 0.15,   // extra km/h per meter över 250 m-lucka (tak 55)
   POWER_MULT: 1.3,        // generellt kraftigare motorer — bilarna kändes sega
   COMEBACK_TURBO: 0.30,   // extra fart efter wipeout-uppställning
   COMEBACK_T: 4,
   CLOSE_AFTER_WIN: 20,     // racet stänger 20 s efter att ettan gått i mål
   RESTAGE_WAIT: 10,       // … och nästa start går 10 s efter det (≤30 s efter ettan)
-  FILL_MIN: 15,           // 15 bilar i varje race — bottar fyller upp bakifrån
+  FILL_MIN: 24,           // 24 bilar i varje race — fylls på under hela loppet
 
-  BOTS: 14,
+  BOTS: 24,
 
   // Världen & banan — MEGA-raksträcka (~13 km ≈ 5 min i full gas)
   WORLD: { WX: 7150, WZ: 700 },

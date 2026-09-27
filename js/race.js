@@ -2,8 +2,8 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=12';
-import { stepGates } from './world.js?v=12';
+import { CONF } from './config.js?v=13';
+import { stepGates, pathPointAt } from './world.js?v=13';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -165,12 +165,50 @@ export class RaceManager {
         p.place = r.finishOrder.length + i + 1;
         // FARTSTEGEN: ettan 210, tvåan 219, trean 228 … — man kommer ALLTID ikapp.
         // Stort gap ger dessutom gummiband-bonus så klungan sluter sig.
-        const gapBonus = Math.min(55, Math.max(0, (lead - p.travel) - 250) * CONF.RACE_GAP_BONUS);
-        c.raceVmax = (CONF.RACE_VMAX_BAS + i * CONF.RACE_VMAX_STEG + gapBonus) / 3.6;
-        c.racePower = 1 + i * CONF.RACE_POWER_STEG + gapBonus * 0.006;
+        const gapBonus = Math.min(70, Math.max(0, (lead - p.travel) - 60) * CONF.RACE_GAP_BONUS);
+        const steg = Math.min(i, 6); // stegen planar ut — inga 500 km/h-raketer längst bak
+        c.raceVmax = (CONF.RACE_VMAX_BAS + steg * CONF.RACE_VMAX_STEG + gapBonus) / 3.6;
+        c.racePower = 1 + steg * CONF.RACE_POWER_STEG + gapBonus * 0.006;
         c.speedMult = 1;
       });
+      if (n > 7) this.packWarp(z, r, active);
+      if (n > 0 && r.closeAt == null && r.t > 8 && r.t < z.maxT - 30 && n < CONF.FILL_MIN &&
+          (r.lastFill == null || r.t - r.lastFill > 6)) {
+        r.lastFill = r.t;
+        this.ctx.fillBots?.(z, CONF.FILL_MIN - n);
+      }
       if (n === 0 || r.t > z.maxT || (r.closeAt != null && r.t >= r.closeAt)) this.endRace(z);
+    }
+  }
+
+  // Osynligt gummiband: bottar långt efter täten, som ingen människa ser,
+  // lyfts upp bakom tätklungan — så det alltid är en klunga runt 1:an.
+  packWarp(z, r, active) {
+    const [leadCar, leadP] = active[0];
+    const humans = this.ctx.allCars.filter(c => c.owner !== null && !c.disposed);
+    const seen = (x, zz, lim) => humans.some(h => Math.hypot(h.pos.x - x, h.pos.z - zz) < lim);
+    const o = {};
+    let warps = 0;
+    for (let i = 7; i < active.length && warps < 2; i++) {
+      const [c, p] = active[i];
+      if (c.owner !== null || c.wrecked) continue;
+      if (leadP.travel - p.travel < 500) continue;
+      if (p.warpT != null && r.t - p.warpT < 6) continue;
+      if (seen(c.pos.x, c.pos.z, 300)) continue;
+      for (const off of [110, 170, 240, 320, 420]) {
+        pathPointAt(z, leadP.lastParam - off, o);
+        if (seen(o.x, o.z, 160)) continue;
+        const lane = (Math.random() - 0.5) * (z.width - 8);
+        c.resetTo({ x: o.x - o.tz * lane, y: 1.5, z: o.z + o.tx * lane }, Math.atan2(-o.tx, -o.tz));
+        const v = Math.max(35, leadCar.absSpeed);
+        c.body.setLinvel({ x: o.tx * v, y: 0, z: o.tz * v }, true);
+        p.travel = Math.max(0, leadP.travel - off);
+        p.lastParam = ((leadP.lastParam - off) % z.total + z.total) % z.total;
+        p.idx = -1;
+        p.warpT = r.t;
+        warps++;
+        break;
+      }
     }
   }
 
