@@ -28,3 +28,6 @@ HIMMEL (env/sky_1k.hdr)
 
 TEXTURER (textures/) — Poly Haven, CC0: aerial_grass_rock, asphalt_02,
   gravelly_sand, concrete_wall_008 (https://polyhaven.com)
+
+PROPS (models/Barrel_01.glb, barrel_03.glb, old_tyre.glb, wild_rooibos_bush.glb)
+  Poly Haven, CC0 — https://polyhaven.com/models (texturer omkodade till WebP 512 px)

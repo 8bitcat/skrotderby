@@ -5,7 +5,7 @@
 // modellens egen geometri, så det är den riktiga bilen som går sönder.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CARS } from './config.js?v=14';
+import { CARS } from './config.js?v=15';
 
 // Hjulcentrum ligger så här långt under fjädringsankaret i vila
 // (susRest 0.42 − kompression g/(4·26) ≈ 0.13).
@@ -13,6 +13,48 @@ export const REST_DROP = 0.29;
 
 export const PART_ORDER = ['stotfangareFram', 'stotfangareBak', 'huv', 'tak', 'dorrV', 'dorrH', 'bagagelucka'];
 export const PART_HEALTH = { stotfangareFram: 24, stotfangareBak: 24, huv: 30, tak: 42, dorrV: 32, dorrH: 32, bagagelucka: 26 };
+
+// Fotoskannade props (Poly Haven, CC0): id → [{ name, parts: [{ geo, mat }], size }]
+// en post per variant (nod); geometrin centrerad i x/z med botten på y=0.
+export const PROPS = {};
+const PROP_FILES = ['Barrel_01', 'barrel_03', 'old_tyre', 'wild_rooibos_bush'];
+
+async function loadProps(loader) {
+  await Promise.all(PROP_FILES.map(async (id) => {
+    try {
+      const g = await loader.loadAsync('models/' + id + '.glb');
+      g.scene.updateMatrixWorld(true);
+      const byNode = new Map();
+      g.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        // flermaterialsmeshar ligger som barn under sin nod — gruppera per nod
+        const node = o.parent && o.parent !== g.scene && !o.parent.isScene ? o.parent : o;
+        if (!byNode.has(node)) byNode.set(node, []);
+        const geo = o.geometry.clone();
+        geo.applyMatrix4(o.matrixWorld);
+        const mat = o.material;
+        if (mat.transparent || mat.alphaTest > 0) {
+          // blad: alfatest istället för blandning (inga sorteringsfel i stora mängder)
+          mat.transparent = false;
+          mat.alphaTest = 0.12;
+          mat.depthWrite = true;
+          mat.side = THREE.DoubleSide;
+        }
+        // rooibos-bladen är gråaktiga i fotot — tona dem gröna så de passar gräset
+        if (/leaves/i.test(mat.name)) mat.color.setHex(0x9fd46a);
+        if (/twigs/i.test(mat.name)) mat.color.setHex(0xc8b89a);
+        byNode.get(node).push({ geo, mat });
+      });
+      PROPS[id] = [...byNode.entries()].map(([node, parts]) => {
+        const bb = new THREE.Box3();
+        for (const p of parts) { p.geo.computeBoundingBox(); bb.union(p.geo.boundingBox); }
+        const off = new THREE.Vector3(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
+        for (const p of parts) p.geo.translate(off.x, off.y, off.z);
+        return { name: node.name, parts, size: bb.getSize(new THREE.Vector3()) };
+      });
+    } catch (e) { console.warn('Prop kunde inte laddas:', id, e); }
+  }));
+}
 
 let loading = null;
 export function loadModels() {
@@ -22,6 +64,7 @@ export function loadModels() {
 
 async function doLoad() {
   const loader = new GLTFLoader();
+  const propsJob = loadProps(loader);
   const files = [...new Set(CARS.filter(d => d.model).map(d => d.model.fil))];
   const scenes = new Map();
   await Promise.all(files.map(async (f) => {
@@ -32,6 +75,7 @@ async function doLoad() {
       console.warn('Bilmodell kunde inte laddas — procedurell bil används:', f, e);
     }
   }));
+  await propsJob;
   for (const def of CARS) {
     const sc = def.model && scenes.get(def.model.fil);
     if (!sc) continue;

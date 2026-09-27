@@ -2,8 +2,9 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=14';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=14';
+import { CONF, CARS } from './config.js?v=15';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=15';
+import { PROPS } from './models.js?v=15';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -1069,6 +1070,40 @@ function addTrees(ctx, scene, hx, hz, LC) {
     const a = hash(i + 9) * Math.PI * 2;
     spots.push([LC.x + Math.cos(a) * (70 + hash(i + 30) * 40), LC.z + Math.sin(a) * (70 + hash(i + 60) * 40)]);
   }
+  const bush = PROPS.wild_rooibos_bush;
+  if (bush && bush.length && bush.some(v => /_[cde]$/.test(v.name))) {
+    // varianter per storlek: lättare varianter oftare (d/e ~1–3k tris, c ~4k)
+    const byName = (suffix) => bush.find(v => v.name.endsWith('_' + suffix));
+    const variants = ['c', 'd', 'e'].map(byName).filter(Boolean);
+    const pickW = [0.2, 0.35, 0.45];
+    const chunks = new Map();
+    spots.forEach(([x, z], i) => {
+      const r = hash(i + 700);
+      let vi = 0, acc = 0;
+      for (let k = 0; k < variants.length; k++) { acc += pickW[k] ?? 0.3; if (r <= acc) { vi = k; break; } vi = k; }
+      const key = Math.floor(x / 1000) + '|' + vi;
+      if (!chunks.has(key)) chunks.set(key, { vi, list: [] });
+      chunks.get(key).list.push([x, z, i]);
+    });
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+    for (const { vi, list } of chunks.values()) {
+      for (const part of variants[vi].parts) {
+        const inst = new THREE.InstancedMesh(part.geo, part.mat, list.length);
+        list.forEach(([x, z, i], k) => {
+          const s = 4 + hash(i + 200) * 5;
+          q.setFromAxisAngle(UP, hash(i + 300) * 6.28);
+          sc.set(s, s * (0.9 + hash(i + 400) * 0.3), s);
+          m.compose(pos.set(x, 0, z), q, sc);
+          inst.setMatrixAt(k, m);
+        });
+        inst.computeBoundingSphere();
+        inst.castShadow = true;
+        inst.receiveShadow = true;
+        scene.add(inst);
+      }
+    }
+    return;
+  }
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 2.6, 6);
   const folGeo = new THREE.IcosahedronGeometry(1, 0);
   const trunkInst = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2c, roughness: 0.95 }), spots.length);
@@ -1281,10 +1316,24 @@ function makeProp(ctx, scene, typ, x, z) {
       );
     }
   } else {
-    mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.42, 0.42, 0.95, 12),
-      new THREE.MeshStandardMaterial({ color: 0x2b6fb3, roughness: 0.5, metalness: 0.4 })
-    );
+    const fat = PROPS[hash(x * 0.37 + z) < 0.5 ? 'Barrel_01' : 'barrel_03'] || PROPS.Barrel_01;
+    if (fat && fat.length) {
+      // fotoskannat oljefat, skalat till kolliderns 0.95 m och centrerat på kroppen
+      mesh = new THREE.Group();
+      const hgt = fat[0].size.y || 0.9;
+      for (const p of fat[0].parts) {
+        const pm = new THREE.Mesh(p.geo, p.mat);
+        pm.scale.setScalar(0.95 / hgt);
+        pm.position.y = -0.475;
+        pm.castShadow = true;
+        mesh.add(pm);
+      }
+    } else {
+      mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.42, 0.95, 12),
+        new THREE.MeshStandardMaterial({ color: 0x2b6fb3, roughness: 0.5, metalness: 0.4 })
+      );
+    }
     mesh.castShadow = true;
     mesh.position.set(x, 0.48, z);
     scene.add(mesh);
