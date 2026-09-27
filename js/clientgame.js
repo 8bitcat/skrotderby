@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=11';
-import { buildWorld, stepGates } from './world.js?v=11';
-import { CarView } from './carview.js?v=11';
-import { Hud } from './hud.js?v=11';
+import { CONF, CARS, PROTO } from './config.js?v=12';
+import { buildWorld, stepGates } from './world.js?v=12';
+import { CarView } from './carview.js?v=12';
+import { Hud } from './hud.js?v=12';
 
 const _v = new THREE.Vector3();
 
@@ -101,6 +101,10 @@ export class ClientGame {
           });
           _v.set(msg.x, msg.y, msg.z);
           this.app.particles.sparks(_v, 10, 0xffb347, 7);
+          const me = this.myView();
+          if (me && Math.hypot(msg.x - me.pos.x, msg.z - me.pos.z) < 70) {
+            this.app.audio.partOff(msg.part === 'tak' || String(msg.part).startsWith('dorr'));
+          }
         }
         break;
       }
@@ -277,9 +281,14 @@ export class ClientGame {
       sun.position.set(me.pos.x + 80, 120, me.pos.z + 40);
       sun.target.position.set(me.pos.x, 0, me.pos.z);
       sun.target.updateMatrixWorld();
-      audio.setEngine(Math.min(1, (me.kmh / 3.6) / 50), inp.throttle, CARS[me.defId]?.motor);
+      audio.drive({
+        kmh: me.kmh, throttle: me.wrecked ? 0 : inp.throttle, motor: CARS[me.defId]?.motor,
+        pitch: CARS[me.defId]?.motorPitch || 1,
+        slip: Math.abs(me.steer) * (me.kmh / 3.6) * 0.35 + (inp.handbrake ? me.kmh / 12 : 0),
+        scrape: false, grounded: true,
+      });
       if (me.kmh < 4 && inp.throttle > 0.5 && !me.wrecked && (this._launchCd ?? 0) <= 0) {
-        audio.launch(CARS[me.defId]?.motor);
+        audio.launch(CARS[me.defId]?.motor, CARS[me.defId]?.motorPitch || 1);
         this._launchCd = 3;
       }
       if ((this._launchCd ?? 0) > 0) this._launchCd -= dt;

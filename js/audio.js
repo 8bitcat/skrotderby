@@ -1,3 +1,4 @@
+import { SampleSfx } from './sfx.js?v=12';
 // Procedurellt ljud via WebAudio — motor, krascher, explosioner, signaler
 // + loopande synthwave-musik (ingen musikfil, allt genereras).
 export class AudioFx {
@@ -48,6 +49,7 @@ export class AudioFx {
       document.addEventListener('visibilitychange', () => {
         if (!this.ok) return;
         if (document.hidden) {
+          this.sfx?.stopAll();
           this.engGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
           this.musicGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
         } else {
@@ -55,8 +57,28 @@ export class AudioFx {
         }
       });
 
+      // Riktiga inspelningar laddas i bakgrunden; syntes används tills de finns
+      this.sfx = new SampleSfx(this.ctx, this.master);
+      this.sfx.load().catch(() => {});
+
       this.ok = true;
     } catch { /* ljud är inte livsviktigt */ }
+  }
+
+  // Spelarens bil varje bildruta: {kmh, throttle, motor, pitch, slip, scrape, grounded}
+  drive(st) {
+    if (!this.ok) return;
+    if (document.hidden) return;
+    if (this.sfx?.drive(st, this.muted)) {
+      this.engGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+      return;
+    }
+    this.setEngine(Math.min(1, (st.kmh / 3.6) / 50), st.throttle, st.motor === 'old' || st.motor === 'i4' ? 'standard' : st.motor);
+  }
+
+  partOff(glas) {
+    if (!this.ok || this.muted) return;
+    this.sfx?.partOff(glas);
   }
 
   // Motorkaraktär per bil: V8 (djup + tomgångs-lope), elmotor (vin), standard.
@@ -94,7 +116,8 @@ export class AudioFx {
   }
 
   // Startljud när man drar iväg från stillastående
-  launch(typ = 'standard') {
+  launch(typ = 'standard', pitch = 1) {
+    if (this.ok && !this.muted && this.sfx?.launch(pitch)) return;
     if (!this.ok || this.muted) return;
     const t = this.ctx.currentTime;
     if (typ === 'el') {
@@ -336,10 +359,13 @@ export class AudioFx {
   }
 
   crash(intensity) {
+    if (!this.ok || this.muted) return;
+    if (this.sfx?.crash(intensity)) return;
     this._burst(intensity * 0.7, 400 + Math.random() * 900, 0.22 + intensity * 0.15);
   }
 
   boom(intensity = 1) {
+    if (this.ok && !this.muted && this.sfx?.boom(intensity)) return;
     this._burst(intensity, 180, 0.7);
     if (!this.ok || this.muted) return;
     const o = this.ctx.createOscillator();
@@ -370,12 +396,14 @@ export class AudioFx {
   }
 
   raceStart() {
+    if (this.ok && !this.muted && this.sfx?.raceStart()) return;
     this._tone(440, 0, 0.15);
     this._tone(440, 0.5, 0.15);
     this._tone(880, 1.0, 0.4);
   }
 
   boost() {
+    if (this.ok && !this.muted && this.sfx?.boost()) return;
     if (!this.ok || this.muted) return;
     const o = this.ctx.createOscillator();
     o.type = 'square';
@@ -391,6 +419,7 @@ export class AudioFx {
   }
 
   win() {
+    if (this.ok && !this.muted) this.sfx?.cheer();
     this._tone(523, 0, 0.14);
     this._tone(659, 0.15, 0.14);
     this._tone(784, 0.3, 0.14);

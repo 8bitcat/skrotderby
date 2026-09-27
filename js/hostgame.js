@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=11';
-import { Car, spawnY } from './vehicle.js?v=11';
-import { buildWorld, pathPointAt } from './world.js?v=11';
-import { RaceManager, nearestParam } from './race.js?v=11';
-import { Bots } from './ai.js?v=11';
-import { Traffic } from './traffic.js?v=11';
-import { Hud } from './hud.js?v=11';
+import { CONF, CARS, PROTO } from './config.js?v=12';
+import { Car, spawnY } from './vehicle.js?v=12';
+import { buildWorld, pathPointAt } from './world.js?v=12';
+import { RaceManager, nearestParam } from './race.js?v=12';
+import { Bots } from './ai.js?v=12';
+import { Traffic } from './traffic.js?v=12';
+import { Hud } from './hud.js?v=12';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -31,7 +31,7 @@ export class HostGame {
       loose: [],
       addLoose: (e) => this._addLoose(e),
       raceMgr: null,
-      onDetach: (car, part, pos, vel) => this.net?.broadcast({
+      onDetach: (car, part, pos, vel) => this._detachFx(car, part, pos) || this.net?.broadcast({
         t: 'los', id: car.id, part,
         x: r2(pos.x), y: r2(pos.y), z: r2(pos.z),
         vx: r1(vel.x), vy: r1(vel.y), vz: r1(vel.z),
@@ -67,6 +67,7 @@ export class HostGame {
       notifyAll: (kind, text, snd) => this.notifyAll(kind, text, snd),
       fillBots: (zone, n) => this.bots.fillRace(zone, n),
       applyVariant: () => this.applyVotedVariant(),
+      restaged: (car, z, i) => this.bots.restage(car, z, i),
     };
     this.raceMgr = new RaceManager(rmCtx, this.worldApi.zones);
     this.ctx.raceMgr = this.raceMgr;
@@ -130,6 +131,12 @@ export class HostGame {
       if (rp) rp.car = nc;
     }
     return nc;
+  }
+
+  _detachFx(car, part, pos) {
+    const d = Math.hypot(pos.x - this.player.pos.x, pos.z - this.player.pos.z);
+    if (d < 70) this.app.audio.partOff(part === 'tak' || part.startsWith('dorr'));
+    return false; // låt broadcast köras
   }
 
   // X: spräng bilen och få en ny (behåller racepositionen via rescueData)
@@ -604,9 +611,12 @@ export class HostGame {
     sun.position.set(p.pos.x + 80, 120, p.pos.z + 40);
     sun.target.position.set(p.pos.x, 0, p.pos.z);
     sun.target.updateMatrixWorld();
-    audio.setEngine(Math.min(1, Math.abs(p.speed) / 50), p.input.throttle, p.def.motor);
+    audio.drive({
+      kmh, throttle: p.wrecked ? 0 : p.input.throttle, motor: p.def.motor, pitch: p.def.motorPitch || 1,
+      slip: p.wrecked ? 0 : Math.abs(p.vel.dot(p.right)), scrape: !!p.sidePress, grounded: p.grounded,
+    });
     if (kmh < 4 && p.input.throttle > 0.5 && !p.wrecked && (this._launchCd ?? 0) <= 0) {
-      audio.launch(p.def.motor);
+      audio.launch(p.def.motor, p.def.motorPitch || 1);
       this._launchCd = 3;
     }
     if ((this._launchCd ?? 0) > 0) this._launchCd -= dt;

@@ -2,8 +2,8 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=11';
-import { stepGates } from './world.js?v=11';
+import { CONF } from './config.js?v=12';
+import { stepGates } from './world.js?v=12';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -146,7 +146,7 @@ export class RaceManager {
         car.raceVmax = null; car.racePower = null;
         car.racing = null;
         car.raceCooldown = 6;
-        car.returnHome = 6; // skjutsas hem till depån — målet ligger 13 km bort
+        if (p.place === 1) r.closeAt = r.t + CONF.CLOSE_AFTER_WIN; // racet stänger 20 s efter ettan
         if (car.owner !== null) {
           this.ctx.notify(car, 'announce', '🏁 MÅL! Du kom ' + p.place + ':a!');
           if (p.place === 1) this.ctx.notifyAll('toast', '🏆 ' + car.name + ' vann racet på ' + z.namn + '!', 'win');
@@ -170,7 +170,7 @@ export class RaceManager {
         c.racePower = 1 + i * CONF.RACE_POWER_STEG + gapBonus * 0.006;
         c.speedMult = 1;
       });
-      if (n === 0 || r.t > z.maxT) this.endRace(z);
+      if (n === 0 || r.t > z.maxT || (r.closeAt != null && r.t >= r.closeAt)) this.endRace(z);
     }
   }
 
@@ -218,11 +218,39 @@ export class RaceManager {
   }
 
   endRace(z) {
-    for (const [car] of z.race.parts) {
+    const r = z.race;
+    for (const [car] of r.parts) {
       if (car.racing === z) { car.racing = null; car.speedMult = 1; car.raceVmax = null; car.racePower = null; }
     }
     z.race = null;
     z.gatesOpen = false;
+    if (z.mode === 'race') this.restage(z, r);
+  }
+
+  // Alla från loppet lyfts tillbaka till startfållan (startordning = målordning)
+  // och nästa start kommer om RESTAGE_WAIT sekunder.
+  restage(z, r) {
+    const done = new Set(r.finishOrder);
+    const rest = [...r.parts.entries()]
+      .filter(([c]) => !done.has(c))
+      .sort((a, b) => b[1].travel - a[1].travel)
+      .map(([c]) => c);
+    const order = [...r.finishOrder, ...rest].filter(c => !c.wrecked && !c.disposed);
+    z.gridClaims.clear();
+    order.slice(0, z.grid.length).forEach((car, i) => {
+      const g = z.grid[i];
+      car.resetTo({ x: g.pos.x, y: 1.6, z: g.pos.z }, g.heading);
+      car.raceCooldown = 0;
+      car.returnHome = 0;
+      z.gridClaims.add(i);
+      this.ctx.restaged?.(car, z, i);
+      if (car.owner !== null) this.ctx.notify(car, 'announce', '🏁 TILLBAKA I STARTFÅLLAN — NÄSTA START OM ' + CONF.RESTAGE_WAIT + ' S');
+    });
+    // Ställ klockan så att nästa minut-tick kommer om RESTAGE_WAIT s
+    const I = CONF.RACE_INTERVAL;
+    this.clock = (Math.floor(this.clock / I) + 1) * I - CONF.RESTAGE_WAIT;
+    this.tLeft = CONF.RESTAGE_WAIT;
+    this.ctx.notifyAll('toast', '🏁 Racet är slut — alla till startfållan, ny start om ' + CONF.RESTAGE_WAIT + ' s!');
   }
 
   dropCar(car) {

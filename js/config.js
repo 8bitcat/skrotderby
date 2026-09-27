@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 11;
+export const PROTO = 12;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -30,6 +30,8 @@ export const CONF = {
   POWER_MULT: 1.3,        // generellt kraftigare motorer — bilarna kändes sega
   COMEBACK_TURBO: 0.30,   // extra fart efter wipeout-uppställning
   COMEBACK_T: 4,
+  CLOSE_AFTER_WIN: 20,     // racet stänger 20 s efter att ettan gått i mål
+  RESTAGE_WAIT: 10,       // … och nästa start går 10 s efter det (≤30 s efter ettan)
   FILL_MIN: 15,           // 15 bilar i varje race — bottar fyller upp bakifrån
 
   BOTS: 14,
@@ -68,7 +70,7 @@ export const CARS = [
     dims: { l: 4.4, w: 1.75, h: 1.3 }, mass: 900,
     model: { fil: 'rgsdev_sedan.glb', lack: ['body grey'] },
     power: 8600, maxKmh: 195, grip: 2.5, steerMax: 0.60, drive: 'awd',
-    motor: 'standard', health: 95, wheelR: 0.37, wheelW: 0.3, spoiler: true,
+    motor: 'i4', motorPitch: 1.12, health: 95, wheelR: 0.37, wheelW: 0.3, spoiler: true,
     stats: { fart: 3, accel: 4, grepp: 5, pansar: 3 },
   },
   {
@@ -78,7 +80,7 @@ export const CARS = [
     dims: { l: 4.9, w: 2.0, h: 1.25 }, mass: 1250,
     model: { fil: 'rgsdev_muscle_2.glb', lack: ['body grey'], rand: ['body dark blue'] },
     power: 12800, maxKmh: 220, grip: 2.1, steerMax: 0.52, drive: 'rwd',
-    motor: 'v8', health: 115, wheelR: 0.42, wheelW: 0.34, spoiler: true,
+    motor: 'v8', motorPitch: 1.0, health: 115, wheelR: 0.42, wheelW: 0.34, spoiler: true,
     stats: { fart: 4, accel: 4, grepp: 3, pansar: 4 },
   },
   {
@@ -88,7 +90,7 @@ export const CARS = [
     dims: { l: 4.6, w: 1.9, h: 1.0 }, mass: 880,
     model: { fil: 'rgsdev_sports.glb', lack: ['body red'] },
     power: 11200, maxKmh: 240, grip: 2.35, steerMax: 0.55, drive: 'rwd',
-    motor: 'el', health: 70, wheelR: 0.38, wheelW: 0.32, spoiler: true,
+    motor: 'el', motorPitch: 1.0, health: 70, wheelR: 0.38, wheelW: 0.32, spoiler: true,
     stats: { fart: 5, accel: 5, grepp: 4, pansar: 1 },
   },
   {
@@ -98,7 +100,7 @@ export const CARS = [
     dims: { l: 5.2, w: 2.1, h: 1.7 }, mass: 1500,
     model: { fil: 'rgsdev_pickup.glb', lack: ['body dark green'] },
     power: 11800, maxKmh: 175, grip: 1.9, steerMax: 0.50, drive: 'awd',
-    motor: 'v8', health: 150, wheelR: 0.5, wheelW: 0.38, spoiler: false,
+    motor: 'v8', motorPitch: 0.84, health: 150, wheelR: 0.5, wheelW: 0.38, spoiler: false,
     stats: { fart: 2, accel: 3, grepp: 3, pansar: 5 },
   },
   {
@@ -108,7 +110,7 @@ export const CARS = [
     dims: { l: 4.8, w: 1.85, h: 1.35 }, mass: 1050,
     model: { fil: 'rgsdev_police_muscle.glb', lack: ['body black', 'body white'], bort: ['flashers siren red', 'flashers siren blue'] },
     power: 8000, maxKmh: 170, grip: 1.8, steerMax: 0.50, drive: 'rwd',
-    motor: 'standard', health: 135, wheelR: 0.38, wheelW: 0.3, spoiler: false,
+    motor: 'old', motorPitch: 1.0, health: 135, wheelR: 0.38, wheelW: 0.3, spoiler: false,
     stats: { fart: 2, accel: 2, grepp: 2, pansar: 5 },
   },
   {
@@ -118,7 +120,7 @@ export const CARS = [
     dims: { l: 4.3, w: 1.8, h: 1.1 }, mass: 620,
     model: { fil: 'rgsdev_muscle.glb', lack: ['body light yellow'], rand: ['body black'] },
     power: 7900, maxKmh: 205, grip: 2.6, steerMax: 0.65, drive: 'awd',
-    motor: 'standard', health: 60, wheelR: 0.45, wheelW: 0.36, spoiler: true,
+    motor: 'i4', motorPitch: 1.28, health: 60, wheelR: 0.45, wheelW: 0.36, spoiler: true,
     stats: { fart: 3, accel: 5, grepp: 5, pansar: 1 },
   },
   // --- Civiltrafik (går ej att välja — VALBARA stoppar) ---
