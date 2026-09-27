@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=9';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=9';
+import { CONF, CARS } from './config.js?v=10';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=10';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -852,16 +852,17 @@ function fmtTime(t) {
 }
 
 function spawnRest(def) {
-  return def.wheelR + (def.susRest || 0.42) * 0.7 + def.dims.h * 0.5;
+  // markens höjd under bilens origo när hjulen står i viloläge
+  return def.dims.h / 2 - 0.08 + 0.29 + def.wheelR;
 }
 
 function buildDisplayCar(def) {
   const { group } = buildCarVisual(def);
-  for (const a of wheelAnchors(def)) {
-    const { holder } = buildWheelMesh(def);
-    holder.position.set(a.x, a.y - (def.susRest || 0.42) * 0.7 + def.wheelR * 0.3, a.z);
+  wheelAnchors(def).forEach((a, i) => {
+    const { holder } = buildWheelMesh(def, i);
+    holder.position.set(a.x, a.y - 0.29, a.z);
     group.add(holder);
-  }
+  });
   return group;
 }
 

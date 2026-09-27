@@ -1,8 +1,8 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=9';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=9';
+import { CONF } from './config.js?v=10';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=10';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
@@ -69,8 +69,8 @@ export class Car {
   _buildWheels() {
     const def = this.def;
     const k = def.mass * 26, c = def.mass * 3.2;
-    this.wheels = wheelAnchors(def).map((a) => {
-      const vis = buildWheelMesh(def);
+    this.wheels = wheelAnchors(def).map((a, i) => {
+      const vis = buildWheelMesh(def, i);
       return {
         anchorL: new THREE.Vector3(a.x, a.y, a.z), steered: a.steered, powered: a.powered,
         radius: def.wheelR, susRest: def.susRest || 0.42, k, c,
@@ -342,7 +342,7 @@ export class Car {
       if (w.detached) continue;
       w.holder.position.set(w.anchorL.x, w.anchorL.y - (w.visLen - w.radius), w.anchorL.z);
       w.holder.rotation.y = w.steered ? this.steerCur : 0;
-      w.spinMesh.rotation.x = w.spin;
+      w.spinMesh.rotation.x = -w.spin; // framåt = toppen rör sig mot −z
     }
 
     const frac = this.health / this.maxHealth;

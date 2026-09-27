@@ -1,0 +1,9 @@
+Bilmodellerna i den här mappen kommer från:
+
+  "Free Low Poly Vehicles Pack" av Raphael Gonçalves (RGS_Dev)
+  https://opengameart.org/content/free-low-poly-vehicles-pack
+  Licens: CC0 (public domain) — "Public domain and free to use on any project,
+  even commercial. Credit is not required."
+
+Filerna är konverterade från FBX till GLB. Spelet delar upp karosserna i
+lossningsbara delar och färgar om lacken per förare vid körning.

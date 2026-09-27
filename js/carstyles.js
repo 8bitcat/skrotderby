@@ -64,7 +64,7 @@ function numberTex(n, accent) {
 function numberDecal(n, accent, size = 0.5) {
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(size, size),
-    new THREE.MeshStandardMaterial({ map: numberTex(n, accent), transparent: true, roughness: 0.5, metalness: 0.1 })
+    new THREE.MeshStandardMaterial({ map: numberTex(n, accent), color: 0xd6d2ca, transparent: true, roughness: 0.6, metalness: 0.05 })
   );
   return m;
 }
@@ -184,10 +184,20 @@ function rbox(sx, sy, sz, material, r = 0.045) {
 // ---------- Hjulankare (delas med fysiken) ----------
 export function wheelAnchors(def) {
   const { l, w, h } = def.dims;
-  const wz = l / 2 - def.wheelR - 0.25;
-  const wx = w / 2 - 0.02; // bred racing-spårvidd
   const wy = -h / 2 + 0.08;
   const all = def.drive === 'awd';
+  if (def._m) {
+    // Riktig modell: ankarna sitter exakt där modellens hjul sitter
+    const A = def._m.anchor;
+    return [
+      { x: -A.x, y: wy, z: A.zF, steered: true, powered: all },
+      { x: A.x, y: wy, z: A.zF, steered: true, powered: all },
+      { x: -A.x, y: wy, z: A.zR, steered: false, powered: true },
+      { x: A.x, y: wy, z: A.zR, steered: false, powered: true },
+    ];
+  }
+  const wz = l / 2 - def.wheelR - 0.25;
+  const wx = w / 2 - 0.02; // bred racing-spårvidd
   return [
     { x: -wx, y: wy, z: -wz, steered: true, powered: all },
     { x: wx, y: wy, z: -wz, steered: true, powered: all },
@@ -196,9 +206,41 @@ export function wheelAnchors(def) {
   ];
 }
 
-export function buildWheelMesh(def) {
+// Material för modellernas egna material-namn (per bil-instans cachat)
+function modelMaterial(name, def, rusty) {
+  const lack = def.model?.lack || [], rand = def.model?.rand || [];
+  if (lack.includes(name)) return paint(def.color, rusty);
+  if (rand.includes(name)) return paint(def.accent ?? 0xffffff, false);
+  const n = name.toLowerCase();
+  if (/window|glass|glas/.test(n)) return glassMat();
+  if (/headlight|front ?light/.test(n)) {
+    return new THREE.MeshStandardMaterial({ color: 0xfff4d8, emissive: 0xfff4d8, emissiveIntensity: 1.6, roughness: 0.3 });
+  }
+  if (/rear ?light|brake|tail/.test(n)) {
+    return new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff2a20, emissiveIntensity: 1.4, roughness: 0.3 });
+  }
+  if (/tire|tyre|rubber/.test(n)) return plast(0x111214);
+  if (/wheel|rim/.test(n)) {
+    return new THREE.MeshStandardMaterial({ color: rusty ? 0x8f959c : 0xdde2e8, metalness: 0.85, roughness: rusty ? 0.55 : 0.28 });
+  }
+  if (/black/.test(n)) return plast(0x131518);
+  if (/white/.test(n)) return new THREE.MeshStandardMaterial({ color: 0xe8e6e0, roughness: 0.45, metalness: 0.2 });
+  return plast(0x3a3e44);
+}
+
+export function buildWheelMesh(def, i = 0) {
   const holder = new THREE.Group();
   const spin = new THREE.Group();
+  if (def._m) {
+    const rusty = def.style === 'skrot' && !def.civil;
+    for (const w of def._m.wheels[i]) {
+      const m = new THREE.Mesh(w.geo, modelMaterial(w.mat, def, rusty));
+      m.castShadow = true;
+      spin.add(m);
+    }
+    holder.add(spin);
+    return { holder, spin };
+  }
   const r = def.wheelR, ww = def.wheelW;
 
   const tireGeo = new THREE.CylinderGeometry(r, r, ww, 22);
@@ -248,8 +290,142 @@ export function makeNameSprite(name) {
   return sp;
 }
 
+// ---------- Bil från riktig 3D-modell ----------
+const MODEL_PART_HEALTH = { stotfangareFram: 24, stotfangareBak: 24, huv: 30, tak: 42, dorrV: 32, dorrH: 32, bagagelucka: 26 };
+
+function buildModelCar(def) {
+  const M = def._m;
+  const { l, w, h } = def.dims;
+  const group = new THREE.Group();
+  const parts = [];
+  const bodyMeshes = [];
+  const civil = !!def.civil;
+  const rusty = def.style === 'skrot' && !civil;
+  const tough = def.health / 100;
+  const accent = '#' + new THREE.Color(def.accent ?? 0xffffff).getHexString();
+  const nr = NUMMER[def.nrIdx ?? 0] ?? 9;
+  const lack = new Set(def.model.lack || []);
+  const skrotPalette = [0x777f86, 0x9b3b2e, 0x4a6a8a, 0x6f7d4a];
+  let skrotIdx = 0;
+
+  const cache = new Map();
+  const matFor = (name, partPaint) => {
+    if (partPaint && lack.has(name)) return partPaint;
+    if (!cache.has(name)) cache.set(name, modelMaterial(name, def, rusty));
+    return cache.get(name);
+  };
+  const mk = (geo, mat) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  };
+
+  for (const c of M.core) {
+    const m = mk(c.geo, matFor(c.mat));
+    group.add(m);
+    bodyMeshes.push(m);
+  }
+
+  function addPart(name, obj, x, y, z, sx, sy, sz, health) {
+    obj.position.set(x, y, z);
+    group.add(obj);
+    parts.push({
+      name, mesh: obj,
+      pos: new THREE.Vector3(x, y, z),
+      size: new THREE.Vector3(sx, sy, sz),
+      health: health * tough, maxHealth: health * tough,
+      attached: true, drooped: false,
+    });
+  }
+
+  // Delar skurna ur modellen (samma ordning på värd och gäst)
+  for (const name of M.partOrder) {
+    const R = M.regions[name];
+    const g = new THREE.Group();
+    // Skroten: varje del sin egen omaka rostfärg
+    const partPaint = rusty ? paint(skrotPalette[(skrotIdx++) % skrotPalette.length], true) : null;
+    for (const c of R.geos) g.add(mk(c.geo, matFor(c.mat, partPaint)));
+    if (!civil) {
+      if (name === 'dorrV' || name === 'dorrH') {
+        const side = name === 'dorrV' ? -1 : 1;
+        const d = numberDecal(nr, accent, Math.min(0.6, R.size.y * 0.5, R.size.z * 0.55));
+        d.rotation.y = side * Math.PI / 2;
+        d.position.set(R.sideX + side * 0.02, R.sideY, 0);
+        g.add(d);
+      } else if (name === 'tak' || name === 'huv') {
+        const d = numberDecal(nr, accent, Math.min(w * 0.42, R.size.z * 0.6));
+        d.rotation.x = -Math.PI / 2;
+        if (name === 'huv') d.rotation.z = Math.PI;
+        d.position.y = R.topY + 0.015;
+        g.add(d);
+      }
+    }
+    addPart(name, g, R.center.x, R.center.y, R.center.z, R.size.x, R.size.y, R.size.z, MODEL_PART_HEALTH[name]);
+  }
+
+  // Tillbehör ovanpå modellen
+  const B = M.box;
+  const st = def.style;
+  if (def.spoiler && !civil) {
+    const wing = new THREE.Group();
+    const wm = st === 'sport' ? plast(0x14171b) : paint(new THREE.Color(def.color).multiplyScalar(0.7).getHex(), rusty);
+    const py = 0.28;
+    const plank = rbox(w * 0.92, 0.05, 0.3, wm, 0.02);
+    plank.position.y = py;
+    plank.rotation.x = -0.12;
+    wing.add(plank);
+    for (const sx of [-1, 1]) {
+      const plate = rbox(0.04, 0.16, 0.34, wm, 0.01);
+      plate.position.set(sx * w * 0.46, py, 0);
+      wing.add(plate);
+      const strut = rbox(0.05, py, 0.08, plast(), 0.01);
+      strut.position.set(sx * w * 0.28, py / 2, 0.05);
+      wing.add(strut);
+    }
+    const tr = M.regions.bagagelucka;
+    const deckY = tr ? tr.center.y + tr.topY : B.min.y + (B.max.y - B.min.y) * 0.55;
+    const deckZ = tr ? tr.center.z + tr.size.z * 0.25 : B.max.z - l * 0.1;
+    addPart('bakvinge', wing, 0, deckY, deckZ, w * 0.92, 0.42, 0.34, 16);
+  }
+  if (st === 'pickup' && !civil) {
+    const bull = new THREE.Group();
+    const bm = chrome();
+    const barGeo = new THREE.CylinderGeometry(0.05, 0.05, w * 0.76, 10);
+    barGeo.rotateZ(Math.PI / 2);
+    for (const yy of [0.12, -0.12]) {
+      const b = new THREE.Mesh(barGeo, bm);
+      b.position.y = yy; b.castShadow = true;
+      bull.add(b);
+    }
+    for (const sx of [-w * 0.26, w * 0.26]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, h * 0.4, 8), bm);
+      p.position.set(sx, 0, 0); p.castShadow = true;
+      bull.add(p);
+    }
+    addPart('frontbage', bull, 0, B.min.y + (B.max.y - B.min.y) * 0.32, B.min.z - 0.16, w * 0.76, h * 0.4, 0.14, 44);
+  }
+  if (st === 'rally' && !civil) {
+    const ramp = new THREE.Group();
+    ramp.add(rbox(w * 0.52, 0.09, 0.14, plast(0x14171b), 0.02));
+    for (let i = -1.5; i <= 1.5; i++) {
+      const li = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.07, 0.03),
+        new THREE.MeshStandardMaterial({ color: 0xfff3c4, emissive: 0xfff3c4, emissiveIntensity: 1.4 })
+      );
+      li.position.set(i * w * 0.13, 0, -0.08);
+      ramp.add(li);
+    }
+    const rf = M.regions.tak;
+    addPart('ljusramp', ramp, 0, B.max.y + 0.06, rf ? rf.center.z - rf.size.z * 0.3 : -l * 0.05, w * 0.52, 0.1, 0.16, 12);
+  }
+
+  return { group, parts, bodyMeshes };
+}
+
 // ---------- Hela bilen ----------
 export function buildCarVisual(def) {
+  if (def._m) return buildModelCar(def);
   const { l, w, h } = def.dims;
   const group = new THREE.Group();
   const parts = [];

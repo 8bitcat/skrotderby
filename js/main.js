@@ -1,12 +1,13 @@
 // Uppstart: meny → värd (äger fysiken, öppnar rum) eller gäst (ansluter med kod).
-import { createScene, ChaseCam } from './scene.js?v=9';
-import { Particles } from './particles.js?v=9';
-import { AudioFx } from './audio.js?v=9';
-import { Input } from './input.js?v=9';
-import { Hud } from './hud.js?v=9';
-import { HostGame } from './hostgame.js?v=9';
-import { ClientGame } from './clientgame.js?v=9';
-import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=9';
+import { createScene, ChaseCam } from './scene.js?v=10';
+import { Particles } from './particles.js?v=10';
+import { AudioFx } from './audio.js?v=10';
+import { Input } from './input.js?v=10';
+import { Hud } from './hud.js?v=10';
+import { HostGame } from './hostgame.js?v=10';
+import { ClientGame } from './clientgame.js?v=10';
+import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=10';
+import { loadModels } from './models.js?v=10';
 
 const hud = new Hud();
 hud.buildMenu();
@@ -34,9 +35,9 @@ async function loadRapier() {
 }
 
 // Förladda fysikmotorn medan menyn visas
-loadRapier()
+Promise.all([loadRapier(), loadModels()])
   .then(() => hud.hideLoading())
-  .catch((e) => { console.error('Rapier kunde inte laddas', e); hud.hideLoading(); });
+  .catch((e) => { console.error('Laddning misslyckades', e); hud.hideLoading(); });
 
 async function startHost(withNet) {
   if (starting || game) return;
@@ -65,6 +66,7 @@ async function startHost(withNet) {
   } else if (withNet) {
     hud.setNetStatus('Multiplayer kräver internet — kör vidare solo med bottar.', true);
   }
+  await loadModels();
   game = new HostGame(app, { RAPIER, defId, name, net, aiNiva: hud.aiNiva });
   window.__game = game; // för felsökning/tester
   hud.startGame(code);
@@ -85,6 +87,7 @@ async function startClient() {
   hud.setNetStatus('Ansluter till ' + code + ' …');
   try {
     const net = await ClientNet.join(code);
+    await loadModels();
     game = new ClientGame(app, { net, name, defId });
     hud.startGame(code);
   } catch (e) {
@@ -96,7 +99,7 @@ async function startClient() {
 // Publik server: alla som öppnar sidan hamnar i samma värld.
 // Finns ingen värd blir du värd; annars ansluter du som gäst.
 // Rummet roteras per version så gamla flikar inte kan blockera nya spelare.
-import { PROTO } from './config.js?v=9';
+import { PROTO } from './config.js?v=10';
 const PUBLIC_CODE = 'PUB' + PROTO;
 
 async function startPublic() {
@@ -110,7 +113,8 @@ async function startPublic() {
     hud.setNetStatus('Ingen internetanslutning — kör solo med bottar.', true);
     try {
       await loadRapier();
-      game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
+      await loadModels();
+  game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
       window.__game = game;
       hud.startGame(null);
     } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }
@@ -121,6 +125,7 @@ async function startPublic() {
   hud.setNetStatus('Letar efter den publika servern …');
   try {
     const net = await ClientNet.join(PUBLIC_CODE);
+    await loadModels();
     game = new ClientGame(app, { net, name, defId, publicMode: true });
     hud.startGame(PUBLIC_CODE);
     starting = false;
@@ -131,20 +136,23 @@ async function startPublic() {
   try {
     await loadRapier();
     const net = await HostNet.create(PUBLIC_CODE);
-    game = new HostGame(app, { RAPIER, defId, name, net, aiNiva: hud.aiNiva });
+    await loadModels();
+  game = new HostGame(app, { RAPIER, defId, name, net, aiNiva: hud.aiNiva });
     window.__game = game;
     hud.startGame(PUBLIC_CODE);
   } catch {
     // Förlorade kapplöpningen om värdskapet — någon annan hann före; anslut dit.
     try {
       const net = await ClientNet.join(PUBLIC_CODE);
-      game = new ClientGame(app, { net, name, defId, publicMode: true });
+      await loadModels();
+    game = new ClientGame(app, { net, name, defId, publicMode: true });
       hud.startGame(PUBLIC_CODE);
     } catch (e) {
       hud.setNetStatus('Kunde inte nå publika servern (' + (e?.message || e?.type || 'okänt fel') + ') — kör solo.', true);
       try {
         await loadRapier();
-        game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
+        await loadModels();
+  game = new HostGame(app, { RAPIER, defId, name, net: null, aiNiva: hud.aiNiva });
         window.__game = game;
         hud.startGame(null);
       } catch { hud.setNetStatus('Fysikmotorn kunde inte laddas.', true); }

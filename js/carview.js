@@ -1,8 +1,8 @@
 // Gästens bild av en bil: interpolerar värdens snapshots, släpper delar visuellt
 // och röker/brinner utifrån hälsoflaggorna. Ingen fysik körs här.
 import * as THREE from 'three';
-import { CARS } from './config.js?v=9';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=9';
+import { CARS } from './config.js?v=10';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=10';
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
@@ -22,8 +22,8 @@ export class CarView {
     this.bodyMeshes = built.bodyMeshes;
 
     const rest = (def.susRest || 0.42) - 0.13;
-    this.wheels = wheelAnchors(def).map((a) => {
-      const { holder, spin } = buildWheelMesh(def);
+    this.wheels = wheelAnchors(def).map((a, i) => {
+      const { holder, spin } = buildWheelMesh(def, i);
       holder.position.set(a.x, a.y - rest, a.z);
       this.group.add(holder);
       return { holder, spin, steered: a.steered, radius: def.wheelR };
@@ -130,7 +130,7 @@ export class CarView {
     for (const w of this.wheels) {
       if (w.holder.parent !== this.group) continue;
       w.holder.rotation.y = w.steered ? this.steer : 0;
-      w.spin.rotation.x = this.spin;
+      w.spin.rotation.x = -this.spin;
     }
 
     if (particles && this.group.visible) {
