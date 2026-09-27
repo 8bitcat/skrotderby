@@ -1,9 +1,9 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=6';
-import { Car, spawnY } from './vehicle.js?v=6';
-import { pathPointAt } from './world.js?v=6';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=7';
+import { Car, spawnY } from './vehicle.js?v=7';
+import { pathPointAt } from './world.js?v=7';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const dist2d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -146,6 +146,8 @@ export class Bots {
   _think(bot, dt) {
     const car = bot.car, rm = this.raceMgr;
     bot.avoid = 0;
+    bot.avBrake = 0;
+    bot.inRace = false;
     if (car.racing && bot.state !== 'RACE') { bot.state = 'RACE'; this._releaseSlot(bot); }
 
     switch (bot.state) {
@@ -197,12 +199,15 @@ export class Bots {
         if (z.mode === 'race') {
           const p = z.race?.parts.get(car);
           const param = p ? p.lastParam : 0;
-          const look = (10 + car.absSpeed * 0.55) * bot.diff.look;
+          const look = (10 + car.absSpeed * 0.62) * bot.diff.look;
+          bot.inRace = true;
           if (bot.laneOff === undefined) bot.laneOff = ((car.id % 7) - 3) * 3.4;
           pathPointAt(z, param + look, this._o);
           // egen fil + väj för refuger/trafik/bilar
           this._t.set(this._o.x - this._o.tz * bot.laneOff, 0, this._o.z + this._o.tx * bot.laneOff);
-          bot.avoid = this._avoidBias(car);
+          const av = this._avoidBias(car);
+          bot.avoid = av.bias;
+          bot.avBrake = av.brake;
           this._driveTo(bot, car, this._t, dt, 1);
           // marshal: står boten still för länge lyfts den in på banan igen
           if (car.absSpeed < 2.5) bot.slowT = (bot.slowT || 0) + dt; else bot.slowT = 0;
@@ -230,32 +235,37 @@ export class Bots {
     }
   }
 
-  // Väj för det som ligger rakt framför (andra bilar + refuger/ramper)
+  // Väj för det som ligger i FÄRDRIKTNINGEN (inte nosen — viktigt i sladd),
+  // lång räckvidd i hög fart, och lyft gasen vid kollisionskurs.
   _avoidBias(car) {
-    let bias = 0;
-    const range = 18 + car.absSpeed * 1.7;
-    const fwd = car.fwd, right = car.right;
+    let bias = 0, brake = 0;
+    const sp = car.absSpeed;
+    let fx = car.vel.x, fz = car.vel.z;
+    const fl = Math.hypot(fx, fz);
+    if (fl < 2) { fx = car.fwd.x; fz = car.fwd.z; }
+    else { fx /= fl; fz /= fl; }
+    const rx2 = -fz, rz2 = fx;
+    const range = 20 + sp * 2.4;
+    const r2max = (range + 20) * (range + 20);
     const check = (px, pz, rad, w) => {
-      const rx = px - car.pos.x, rz = pz - car.pos.z;
-      const along = rx * fwd.x + rz * fwd.z;
+      const dx = px - car.pos.x, dz = pz - car.pos.z;
+      if (dx * dx + dz * dz > r2max) return;
+      const along = dx * fx + dz * fz;
       if (along < 4 || along > range) return;
-      const lat = rx * right.x + rz * right.z;
-      if (Math.abs(lat) > rad + 2.6) return;
+      const lat = dx * rx2 + dz * rz2;
+      if (Math.abs(lat) > rad + 3) return;
       const push = (1 - along / range) * w;
       bias += lat >= 0 ? -push : push;
+      if (Math.abs(lat) < rad + 1.2 && along < sp * 0.6 + 8) brake = Math.max(brake, 0.7);
     };
     for (const o of this.ctx.allCars) {
       if (o === car || o.disposed) continue;
-      const dx = o.pos.x - car.pos.x;
-      if (dx * dx > 10000) continue;
-      check(o.pos.x, o.pos.z, 1.6, 0.8);
+      check(o.pos.x, o.pos.z, 1.6, 0.9);
     }
     for (const o of (this.world.avoid || [])) {
-      const dx = o.x - car.pos.x;
-      if (dx * dx > 14000) continue;
-      check(o.x, o.z, o.r, 1.1);
+      check(o.x, o.z, o.r, 1.2);
     }
-    return Math.max(-1, Math.min(1, bias));
+    return { bias: Math.max(-1, Math.min(1, bias)), brake };
   }
 
   _driveTo(bot, car, target, dt, aggr) {
@@ -279,10 +289,13 @@ export class Bots {
       throttle = aggr * (Math.abs(ang) > 1.1 ? 0.45 : 1);
     }
 
-    // Svårighetsgrad: gasfot + styrslarv
-    if (throttle > 0) throttle *= bot.diff.gas;
+    // Svårighetsgrad: gasfot (BARA utanför race — i race kör alla för fullt,
+    // fartstegen sköter balansen) + styrslarv som försvinner i hög fart
+    if (throttle > 0 && !bot.inRace) throttle *= bot.diff.gas;
+    if (bot.avBrake && throttle > 0) throttle *= 1 - bot.avBrake;
     bot.nT += dt;
-    steer += Math.sin(bot.nT * 2.1 + bot.phase) * bot.diff.brus * Math.min(1, car.absSpeed / 15);
+    const noiseScale = (bot.inRace ? 0.45 : 1) * Math.min(1, 18 / Math.max(6, car.absSpeed));
+    steer += Math.sin(bot.nT * 2.1 + bot.phase) * bot.diff.brus * noiseScale * Math.min(1, car.absSpeed / 15);
 
     // Fastkörningsskydd: backa en stund och vrid åt andra hållet
     if (car.absSpeed < 0.9 && throttle > 0.3) bot.stuckT += dt;

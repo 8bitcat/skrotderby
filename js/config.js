@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 6;
+export const PROTO = 7;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
