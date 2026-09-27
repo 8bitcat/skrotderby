@@ -27,6 +27,10 @@ export class Input {
                (this.down('KeyS') || this.down('ArrowDown') ? -1 : 0);
     const steer = (this.down('KeyA') || this.down('ArrowLeft') ? 1 : 0) +
                   (this.down('KeyD') || this.down('ArrowRight') ? -1 : 0);
-    return { throttle: th, steer, handbrake: this.down('Space') };
+    return {
+      throttle: th, steer,
+      handbrake: this.down('Space'),
+      hop: this.down('ShiftLeft') || this.down('ShiftRight'),
+    };
   }
 }

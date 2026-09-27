@@ -1,8 +1,8 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=8';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=8';
+import { CONF } from './config.js?v=9';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=9';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
@@ -121,6 +121,7 @@ export class Car {
     if (this.dmgCooldown > 0) this.dmgCooldown -= dt;
     if (this.turboT > 0) this.turboT -= dt;
     if (this.raceCooldown > 0) this.raceCooldown -= dt;
+    if (this.hopCd > 0) this.hopCd -= dt;
 
     // Ramlade ur världen?
     if (this.pos.y < -25) this.resetTo(new THREE.Vector3(CONF.LOBBY.x, 3, CONF.LOBBY.z + 40), 0);
@@ -212,6 +213,11 @@ export class Car {
       w.spin += vF2 / w.radius * dt;
     }
     this.grounded = grounded > 0;
+    // SHIFT = hopp — man ska alltid kunna hoppa
+    if (this.input.hop && this.grounded && !(this.hopCd > 0)) {
+      this.hopCd = 2.5;
+      rb.applyImpulse({ x: this.up.x * def.mass * 7.3, y: this.up.y * def.mass * 7.3, z: this.up.z * def.mass * 7.3 }, true);
+    }
   }
 
   applyDamage(amount, point, attacker) {

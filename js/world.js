@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=8';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=8';
+import { CONF, CARS } from './config.js?v=9';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=9';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -147,7 +147,7 @@ function stripeMat() {
 }
 
 // ---------- Fysik-hjälpare ----------
-function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0) {
+function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0, frict = 0.4) {
   if (!ctx.world) return null;
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, yaw, rotZ));
   const body = ctx.world.createRigidBody(
@@ -155,7 +155,7 @@ function fixedBox(ctx, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, ro
       .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
   );
   const col = ctx.world.createCollider(
-    ctx.RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.4).setRestitution(0.4),
+    ctx.RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(frict).setRestitution(0.4),
     body
   );
   if (noDmg) ctx.noDmg.add(col.handle);
@@ -262,8 +262,8 @@ export function buildWorld(ctx) {
   const FEAT_X = [2600, 4600, 9300, 10800]; // håll refuger borta härifrån
   const rampM = new THREE.MeshStandardMaterial({ ...pbr('asphalt_02', 3, 2), roughness: 1 });
   const railM2 = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.6 });
-  const slab = (x, y, z, lx, h, lz, rotZ = 0, mat = rampM, noDmg = true) => {
-    fixedBox(ctx, x, y, z, lx / 2, h / 2, lz / 2, 0, noDmg, 0, rotZ);
+  const slab = (x, y, z, lx, h, lz, rotZ = 0, mat = rampM, noDmg = true, frict = 0.4) => {
+    fixedBox(ctx, x, y, z, lx / 2, h / 2, lz / 2, 0, noDmg, 0, rotZ, frict);
     const m = new THREE.Mesh(new THREE.BoxGeometry(lx, h, lz), mat);
     m.position.set(x, y, z);
     m.rotation.z = rotZ;
@@ -274,10 +274,10 @@ export function buildWorld(ctx) {
 
   // KÖRBAR BRO vid 4,6 km — upp, 70 m däck på 4 m höjd, ner
   {
-    const B = SX - 4600, ang = Math.atan(4 / 30);
-    slab(B + 50, 2, HZ, 30.5, 0.4, W, -ang);
+    const B = SX - 4600, ang = Math.atan(4 / 41.5);
+    slab(B + 56, 2, HZ, 42.5, 0.4, W, -ang, rampM, true, 0.06);
     slab(B, 3.99, HZ, 70, 0.4, W);
-    slab(B - 50, 2, HZ, 30.5, 0.4, W, ang);
+    slab(B - 56, 2, HZ, 42.5, 0.4, W, ang, rampM, true, 0.06);
     for (const sz of [-1, 1]) {
       slab(B, 4.7, HZ + sz * (W / 2 - 0.3), 70, 0.7, 0.5, 0, railM2, false);
     }
@@ -292,13 +292,13 @@ export function buildWorld(ctx) {
   // HOPPBRON vid 9,3 km — ramp upp, 24 m GAP, landningsramp. BILAR SKA FLYGA.
   {
     const B = SX - 9300;
-    const upAng = Math.atan(4.6 / 24);
-    slab(B + 30, 2.3, HZ, 24.5, 0.4, W, -upAng);
+    const upAng = Math.atan(4.6 / 33.6);
+    slab(B + 35, 2.3, HZ, 34.5, 0.4, W, -upAng, rampM, true, 0.06);
     for (const sz of [-1, 1]) {
-      slab(B + 30, 3.1, HZ + sz * (W / 2 - 0.3), 24, 0.6, 0.5, -upAng, railM2, false);
+      slab(B + 35, 3.1, HZ + sz * (W / 2 - 0.3), 34, 0.6, 0.5, -upAng, railM2, false);
     }
-    const dnAng = Math.atan(4.2 / 34);
-    slab(B - 23, 2.05, HZ, 34.5, 0.4, W, dnAng);
+    const dnAng = Math.atan(4.2 / 40);
+    slab(B - 26, 2.05, HZ, 40.5, 0.4, W, dnAng, rampM, true, 0.06);
     makeKmSign(scene, B + 60, HZ - W / 2 - 3, 'HOPP!');
   }
 
@@ -306,9 +306,9 @@ export function buildWorld(ctx) {
   for (const fx of [2600, 10800]) {
     for (let b = 0; b < 3; b++) {
       const bx = SX - fx - b * 26;
-      const ang = Math.atan(0.9 / 6.5);
-      slab(bx + 3.2, 0.42, HZ, 7, 0.3, W, -ang);
-      slab(bx - 3.2, 0.42, HZ, 7, 0.3, W, ang);
+      const ang = Math.atan(0.55 / 6.5);
+      slab(bx + 3.2, 0.32, HZ, 7, 0.3, W, -ang, rampM, true, 0.06);
+      slab(bx - 3.2, 0.32, HZ, 7, 0.3, W, ang, rampM, true, 0.06);
     }
   }
 
@@ -648,8 +648,8 @@ export function buildWorld(ctx) {
     { namn: 'RAMPFESTEN', trafik: 4, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
   ];
   const vMesh = (v, m) => { scene.add(m); v.meshes.push(m); return m; };
-  const vFixed = (v, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0) => {
-    const r = fixedBox(ctx, x, y, z, hx, hy, hz, yaw, noDmg, rotX, rotZ);
+  const vFixed = (v, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0, frict = 0.4) => {
+    const r = fixedBox(ctx, x, y, z, hx, hy, hz, yaw, noDmg, rotX, rotZ, frict);
     if (r) v.fixed.push({ body: r.body, x, y, z });
   };
   const vRefuge = (v, rx, off, len) => {
@@ -666,11 +666,11 @@ export function buildWorld(ctx) {
     }
   };
   const vRamp = (v, rx, off) => {
-    v.avoid.push({ x: rx, z: HZ + off, r: 6.5 });
-    const ang = 0.16;
-    vFixed(v, rx, 0.62, HZ + off, 4.5, 0.15, 7, 0, true, 0, -ang);
+    v.avoid.push({ x: rx, z: HZ + off, r: 9 });
+    const ang = 0.09; // flack nog att ta i 300 km/h — hoppet ska ALLTID funka
+    vFixed(v, rx, 0.62, HZ + off, 8, 0.15, 7, 0, true, 0, -ang, 0.06);
     const rm = new THREE.Mesh(
-      new THREE.BoxGeometry(9, 0.3, 14),
+      new THREE.BoxGeometry(16, 0.3, 14),
       new THREE.MeshStandardMaterial({ color: 0x565c64, roughness: 0.8 })
     );
     rm.position.set(rx, 0.62, HZ + off);
@@ -678,7 +678,7 @@ export function buildWorld(ctx) {
     rm.castShadow = true;
     vMesh(v, rm);
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 14), stripeMat());
-    edge.position.set(rx - 4.4, 1.32, HZ + off);
+    edge.position.set(rx - 7.8, 1.42, HZ + off);
     edge.rotation.z = -ang;
     vMesh(v, edge);
   };
