@@ -2,6 +2,7 @@
 // ACES-tonmappning, miljöreflektioner (PMREM), himmelsgradient + moln.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -62,6 +63,7 @@ export function createScene() {
 
   // Moln
   const cloudTex = cloudTexture();
+  const clouds = [];
   for (let i = 0; i < 16; i++) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: cloudTex, transparent: true, opacity: 0.75, depthWrite: false, fog: false,
@@ -72,12 +74,27 @@ export function createScene() {
     const s = 90 + hash(i + 120) * 140;
     sp.scale.set(s, s * 0.42, 1);
     scene.add(sp);
+    clouds.push(sp);
   }
+
+  // Riktig himmel (Poly Haven HDRI, CC0): bakgrund + miljöljus + reflektioner i lacken.
+  // Gradientkupolen och molnen ovan är reserv tills den laddats.
+  new RGBELoader().load('env/sky_1k.hdr', (hdr) => {
+    hdr.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = hdr;
+    scene.environment = pmrem.fromEquirectangular(hdr).texture;
+    scene.environmentIntensity = 0.85;
+    scene.fog.color.setHex(0xc8d4de);
+    sky.visible = false;
+    for (const c of clouds) c.visible = false;
+    hemi.intensity = 0.35;
+  }, undefined, (e) => console.warn('HDRI kunde inte laddas — gradienthimmel används', e));
 
   const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
   camera.position.set(6440, 30, 60);
 
-  scene.add(new THREE.HemisphereLight(0xd8e8ff, 0x51653f, 0.65));
+  const hemi = new THREE.HemisphereLight(0xd8e8ff, 0x51653f, 0.65);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff2da, 1.45);
   sun.position.set(6600, 120, 40);
   sun.castShadow = true;

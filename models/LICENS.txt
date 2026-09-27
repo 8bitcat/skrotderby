@@ -1,9 +1,30 @@
-Bilmodellerna i den här mappen kommer från:
+BILMODELLER — alla av Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)
+Licens: CC-BY 4.0 (http://creativecommons.org/licenses/by/4.0/) — upphovspersonen ska krediteras.
+Ändringar: texturer omkodade till WebP 1024 px; spelet delar upp karosserna i
+lossningsbara delar, färgar om lacken och lägger till racenummer vid körning.
 
-  "Free Low Poly Vehicles Pack" av Raphael Gonçalves (RGS_Dev)
-  https://opengameart.org/content/free-low-poly-vehicles-pack
-  Licens: CC0 (public domain) — "Public domain and free to use on any project,
-  even commercial. Credit is not required."
+  muscle71.glb     "American Muscle '71 - Low poly model"
+                   https://sketchfab.com/3d-models/955edc733c6d44fabc0ad7c246a15896
+  fullsize73.glb   "American Fullsize '73 - Low poly model"
+                   https://sketchfab.com/3d-models/f30b644b59b54e809355009dce463d47
+  derbycar.glb     "Demolition derby car"
+                   https://sketchfab.com/3d-models/4d9d28e987cd4eb3a929b739b486fc75
+  derbycoupe78.glb "Derby utility coupe '78"
+                   https://sketchfab.com/3d-models/2c4ae9799ae44457b391a4fd07c68a51
+  sedan80s.glb     "80s Generic midsize sedan"
+                   https://sketchfab.com/3d-models/e2678da920cc4be68dbc193727919ffb
+  sedan88.glb      "88 American Sedan - Low poly model"
+                   https://sketchfab.com/3d-models/8509a7f82665442592627940b7a1cfab
+  pickup78.glb     "Compact Pickup '78"
+                   https://sketchfab.com/3d-models/30700a84311c4bea9ef722f0773ce92a
+  amsedan80.glb    "80 American Sedan"
+                   https://sketchfab.com/3d-models/892b2684fb37442299bfad9222cf331c
 
-Filerna är konverterade från FBX till GLB. Spelet delar upp karosserna i
-lossningsbara delar och färgar om lacken per förare vid körning.
+This work is based on the models above by Daniel Zhabotinsky, licensed under CC-BY-4.0.
+
+HIMMEL (env/sky_1k.hdr)
+  "Kloofendal 48d Partly Cloudy (Pure Sky)" — Poly Haven, CC0
+  https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
+
+TEXTURER (textures/) — Poly Haven, CC0: aerial_grass_rock, asphalt_02,
+  gravelly_sand, concrete_wall_008 (https://polyhaven.com)

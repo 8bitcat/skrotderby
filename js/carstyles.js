@@ -211,6 +211,11 @@ function modelMaterial(name, def, rusty) {
   const lack = def.model?.lack || [], rand = def.model?.rand || [];
   if (lack.includes(name)) return paint(def.color, rusty);
   if (rand.includes(name)) return paint(def.accent ?? 0xffffff, false);
+  // Realistiska modeller: behåll modellens egna material (krom, glas, lampor, inredning, emblem)
+  if (def.model?.orig) {
+    const s = def._m?.src.get(name);
+    if (s) return s.clone();
+  }
   const n = name.toLowerCase();
   if (/window|glass|glas/.test(n)) return glassMat();
   if (/headlight|front ?light/.test(n)) {
@@ -233,8 +238,10 @@ export function buildWheelMesh(def, i = 0) {
   const spin = new THREE.Group();
   if (def._m) {
     const rusty = def.style === 'skrot' && !def.civil;
+    const wm = def._m.wheelMats;
     for (const w of def._m.wheels[i]) {
-      const m = new THREE.Mesh(w.geo, modelMaterial(w.mat, def, rusty));
+      if (!wm.has(w.mat)) wm.set(w.mat, modelMaterial(w.mat, def, rusty)); // hjulen delar material
+      const m = new THREE.Mesh(w.geo, wm.get(w.mat));
       m.castShadow = true;
       spin.add(m);
     }

@@ -5,7 +5,7 @@
 // modellens egen geometri, så det är den riktiga bilen som går sönder.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CARS } from './config.js?v=13';
+import { CARS } from './config.js?v=14';
 
 // Hjulcentrum ligger så här långt under fjädringsankaret i vila
 // (susRest 0.42 − kompression g/(4·26) ≈ 0.13).
@@ -39,10 +39,45 @@ async function doLoad() {
   }
 }
 
+// Ett enskilt hjul: har 'wheel' i namnet, inte ratt/reservhjul, och säger vilket hörn
+const isWheelName = (n) => /wheel/i.test(n) && !/steer|spare/i.test(n) &&
+  /(^|[^a-z])(f|r|b)[lr]([^a-z]|$)|wheel_?(f|r|b)[lr]|front|rear|back|left|right|wheel_?0?[1-4]([^0-9]|$)/i.test(n);
+const sideOf = (n) => {
+  const rest = n.toLowerCase().replace(/^.*wheel[_ ]*/, '');
+  if (/^f|front/.test(rest)) return 'F';
+  if (/^(r|b)[lr_ ]|rear|back/.test(rest)) return 'R';
+  return null;
+};
+const KARNA = /interior|rollcage_?frame|steer|seat|dash/i; // stannar alltid i karossen
+
 function prepare(def, scene) {
+  // Vrid modellen så att fronten pekar mot +z (sedan hanterar N resten)
+  scene.rotation.set(0, 0, 0);
   scene.updateMatrixWorld(true);
+  {
+    const front = new THREE.Vector3(), rear = new THREE.Vector3();
+    let nf = 0, nr = 0;
+    scene.traverse((o) => {
+      if (!isWheelName(o.name)) return;
+      if (o.parent && isWheelName(o.parent.name)) return; // bara översta hjulnoden
+      const side = sideOf(o.name);
+      const p = o.getWorldPosition(new THREE.Vector3());
+      if (side === 'F') { front.add(p); nf++; } else if (side === 'R') { rear.add(p); nr++; }
+    });
+    let yaw = 0;
+    if (nf && nr) {
+      const dir = front.divideScalar(nf).sub(rear.divideScalar(nr));
+      yaw = -Math.atan2(dir.x, dir.z);
+    } else if (def.model.fram) {
+      yaw = { '+z': 0, '-z': Math.PI, '-x': Math.PI / 2, '+x': -Math.PI / 2 }[def.model.fram] ?? 0;
+    }
+    scene.rotation.y = yaw;
+    scene.updateMatrixWorld(true);
+  }
   const bort = new Set(def.model.bort || []);
   const matName = (m) => (m && m.name) || '';
+  const src = new Map();
+  scene.traverse((o) => { if (o.isMesh && o.material && !src.has(matName(o.material))) src.set(matName(o.material), o.material); });
 
   // Sortera meshar: hjul (grupperade per hjulnod) och kaross
   const wheelGroups = new Map();
@@ -53,7 +88,7 @@ function prepare(def, scene) {
     // Hjulnoden = översta förfadern med "wheel" i namnet (flermaterialsmeshar
     // blir en grupp med en mesh per material under noden)
     let owner = null;
-    for (let p = o; p && p !== scene; p = p.parent) if (/wheel/i.test(p.name)) owner = p;
+    for (let p = o; p && p !== scene; p = p.parent) if (isWheelName(p.name)) owner = p;
     if (owner) {
       if (!wheelGroups.has(owner)) wheelGroups.set(owner, []);
       wheelGroups.get(owner).push(o);
@@ -121,7 +156,7 @@ function prepare(def, scene) {
     const u = (pz - box.min.z) / size.z;           // 0 = front, 1 = bak
     const vy = (py - box.min.y) / size.y;
     const sx = px / halfW;
-    const glas = mat === 'windows';
+    const glas = /window|glass|glas/i.test(mat);
     if (u < 0.075 && vy < 0.55) return 'stotfangareFram';
     if (u > 0.925 && vy < 0.55) return 'stotfangareBak';
     if (!glas && vy > 0.8 && ny > 0.55) return 'tak';
@@ -147,7 +182,8 @@ function prepare(def, scene) {
     for (let t = 0; t < P.count; t += 3) {
       a.fromBufferAttribute(P, t); b.fromBufferAttribute(P, t + 1); c.fromBufferAttribute(P, t + 2);
       fn.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a)).normalize();
-      const reg = classify((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3, fn.x, fn.y, mat) || 'kaross';
+      const reg = KARNA.test(mat) ? 'kaross'
+        : (classify((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3, fn.x, fn.y, mat) || 'kaross');
       const bk = bucket(reg, mat);
       for (let k = 0; k < 3; k++) {
         bk.pos.push(P.getX(t + k), P.getY(t + k), P.getZ(t + k));
@@ -200,5 +236,5 @@ function prepare(def, scene) {
     R.sideX = sideHit ? sideHit.point.x : sx * R.size.x / 2;
   }
 
-  def._m = { core, regions, partOrder, wheels, anchor, box, size };
+  def._m = { core, regions, partOrder, wheels, anchor, box, size, src, wheelMats: new Map() };
 }

@@ -210,6 +210,8 @@ html, body {
 }
 .joinrow input:focus { border-color: #8ecfff; }
 
+.credits { margin-top: 10px; font-size: 11.5px; color: #6f7784; }
+.credits a { color: #8b93a0; }
 #netstatus { margin-top: 12px; font-size: 13.5px; color: #7fe37f; min-height: 18px; }
 #netstatus.err { color: #ff8b7a; }
 
