@@ -1,9 +1,9 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=10';
-import { Car, spawnY } from './vehicle.js?v=10';
-import { pathPointAt } from './world.js?v=10';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=11';
+import { Car, spawnY } from './vehicle.js?v=11';
+import { pathPointAt } from './world.js?v=11';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const dist2d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);

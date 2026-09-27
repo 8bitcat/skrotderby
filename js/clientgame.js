@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=10';
-import { buildWorld, stepGates } from './world.js?v=10';
-import { CarView } from './carview.js?v=10';
-import { Hud } from './hud.js?v=10';
+import { CONF, CARS, PROTO } from './config.js?v=11';
+import { buildWorld, stepGates } from './world.js?v=11';
+import { CarView } from './carview.js?v=11';
+import { Hud } from './hud.js?v=11';
 
 const _v = new THREE.Vector3();
 
@@ -239,6 +239,7 @@ export class ClientGame {
       if (this.connected) this.net.send({ t: 'input', g: inp.throttle, s: inp.steer, h: inp.handbrake ? 1 : 0, j: inp.hop ? 1 : 0 });
     }
     if (input.take('KeyR')) this.net.send({ t: 'reset' });
+    if (input.take('KeyX')) this.net.send({ t: 'sprang' });
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
     if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');

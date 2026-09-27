@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=10';
-import { Car, spawnY } from './vehicle.js?v=10';
-import { buildWorld, pathPointAt } from './world.js?v=10';
-import { RaceManager, nearestParam } from './race.js?v=10';
-import { Bots } from './ai.js?v=10';
-import { Traffic } from './traffic.js?v=10';
-import { Hud } from './hud.js?v=10';
+import { CONF, CARS, PROTO } from './config.js?v=11';
+import { Car, spawnY } from './vehicle.js?v=11';
+import { buildWorld, pathPointAt } from './world.js?v=11';
+import { RaceManager, nearestParam } from './race.js?v=11';
+import { Bots } from './ai.js?v=11';
+import { Traffic } from './traffic.js?v=11';
+import { Hud } from './hud.js?v=11';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -132,6 +132,15 @@ export class HostGame {
     return nc;
   }
 
+  // X: spräng bilen och få en ny (behåller racepositionen via rescueData)
+  trySelfDestruct(car) {
+    if (!car || car.wrecked || car.disposed) return;
+    car.health = 0;
+    car.wreck();
+    car.deadT = 1.5; // explosionen direkt, ny bil strax efter
+    this.notify(car, 'announce', '💥 KABOOM — ny bil på väg!');
+  }
+
   tryReset(car) {
     if (car.wrecked || car.disposed) return;
     if (car.up.y < 0.5 || car.absSpeed < 2.5) car.resetUpright(false);
@@ -179,6 +188,11 @@ export class HostGame {
           rp.car.input.handbrake = !!msg.h;
           rp.car.input.hop = !!msg.j;
         }
+        break;
+      }
+      case 'sprang': {
+        const rp = this.remotePlayers.get(id);
+        if (rp) this.trySelfDestruct(rp.car);
         break;
       }
       case 'reset': {
@@ -407,6 +421,22 @@ export class HostGame {
   }
 
   // ---------- Spelarhjälp ----------
+  // Färre än 3 hjul och står still ⇒ automatiskt utslagen efter 4 s (spelare, bottar och trafik)
+  handleWheelless(dt) {
+    for (const c of this.ctx.allCars) {
+      if (c.wrecked || c.disposed) continue;
+      const hjul = c.wheels.filter(w => !w.detached).length;
+      if (hjul < 3 && c.absSpeed < 4) {
+        c.noWheelT = (c.noWheelT || 0) + dt;
+        if (c.noWheelT > 0.8 && !c.noWheelWarned && c.owner !== null) {
+          c.noWheelWarned = true;
+          this.notify(c, 'toast', 'Hjullös! Tryck X för ny bil (eller vänta 4 s)');
+        }
+        if (c.noWheelT > 4) { c.noWheelT = 0; this.trySelfDestruct(c); }
+      } else { c.noWheelT = 0; }
+    }
+  }
+
   handleWipeouts() {
     for (const c of this.ctx.allCars) {
       if (c.owner === null || c.wrecked || c.disposed) continue; // bottar sköts av AI:n
@@ -514,6 +544,7 @@ export class HostGame {
     if (!this.player.wrecked) Object.assign(this.player.input, input.playerInput());
     else this.player.input = { throttle: 0, steer: 0, handbrake: false };
     if (input.take('KeyR')) this.tryReset(this.player);
+    if (input.take('KeyX')) this.trySelfDestruct(this.player);
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
     if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');
@@ -536,6 +567,7 @@ export class HostGame {
     this.raceMgr.update(dt);
     this.handleBoosts(dt);
     this.handleWipeouts();
+    this.handleWheelless(dt);
     this.handleRespawns();
     this.handlePads(dt);
     this.handleOffTrack(dt);

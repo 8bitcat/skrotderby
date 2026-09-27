@@ -1,5 +1,5 @@
 // HUD + startmeny (DOM ovanpå canvasen)
-import { CARS, CONF, BANOR } from './config.js?v=10';
+import { CARS, CONF, BANOR } from './config.js?v=11';
 
 const $ = (id) => document.getElementById(id);
 
