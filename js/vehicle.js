@@ -1,8 +1,8 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=5';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=5';
+import { CONF } from './config.js?v=6';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=6';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
@@ -60,7 +60,7 @@ export class Car {
     const cd = RAPIER.ColliderDesc.cuboid(w / 2, h / 2, l / 2)
       .setTranslation(0, -h * 0.3, 0)
       .setMass(this.def.mass)
-      .setFriction(0.35).setRestitution(0.35);
+      .setFriction(0.35).setRestitution(0.45);
     this.collider = world.createCollider(cd, this.body);
     this.ctx.carsByCollider.set(this.collider.handle, this);
     this.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
@@ -135,13 +135,13 @@ export class Car {
     this.steerCur += (targetSteer - this.steerCur) * Math.min(1, 9 * dt);
 
     // Motor och broms — skadad motor orkar mindre
-    const hf = 0.45 + 0.55 * Math.max(0, this.health) / this.maxHealth;
+    const hf = 0.6 + 0.4 * Math.max(0, this.health) / this.maxHealth;
     const mult = this.speedMult * (this.turboT > 0 ? 1 + CONF.COMEBACK_TURBO : 1);
-    const vmax = def.maxKmh / 3.6 * mult;
+    const vmax = (this.raceVmax ?? def.maxKmh / 3.6) * mult; // fartstegen i race
     let drive = 0, brake = 0;
     const th = this.input.throttle;
     if (th > 0.01) {
-      if (vFwd < vmax) drive = th * def.power * mult * hf;
+      if (vFwd < vmax) drive = th * def.power * CONF.POWER_MULT * (this.racePower ?? 1) * mult * hf;
     } else if (th < -0.01) {
       if (vFwd > 1.5) brake = def.power * 1.5 * (-th);
       else if (vFwd > -11) drive = th * def.power * 0.55 * hf;

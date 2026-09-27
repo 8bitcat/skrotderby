@@ -2,8 +2,8 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=5';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=5';
+import { CONF, CARS } from './config.js?v=6';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=6';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -258,6 +258,75 @@ export function buildWorld(ctx) {
   // "Förråd" under marken där inaktiva varianters lösa saker parkeras
   fixedBox(ctx, SX - 6500, -499, HZ, 7000, 1, 80, 0, true);
 
+  // ============ BANLIV (alltid aktivt): broar man KÖR över, hopp, vågor ============
+  const FEAT_X = [2600, 4600, 9300, 10800]; // håll refuger borta härifrån
+  const rampM = new THREE.MeshStandardMaterial({ ...pbr('asphalt_02', 3, 2), roughness: 1 });
+  const railM2 = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.6 });
+  const slab = (x, y, z, lx, h, lz, rotZ = 0, mat = rampM, noDmg = true) => {
+    fixedBox(ctx, x, y, z, lx / 2, h / 2, lz / 2, 0, noDmg, 0, rotZ);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(lx, h, lz), mat);
+    m.position.set(x, y, z);
+    m.rotation.z = rotZ;
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  };
+
+  // KÖRBAR BRO vid 4,6 km — upp, 70 m däck på 4 m höjd, ner
+  {
+    const B = SX - 4600, ang = Math.atan(4 / 30);
+    slab(B + 50, 2, HZ, 30.5, 0.4, W, -ang);
+    slab(B, 3.99, HZ, 70, 0.4, W);
+    slab(B - 50, 2, HZ, 30.5, 0.4, W, ang);
+    for (const sz of [-1, 1]) {
+      slab(B, 4.7, HZ + sz * (W / 2 - 0.3), 70, 0.7, 0.5, 0, railM2, false);
+    }
+    // korsande väg under bron
+    const under = new THREE.Mesh(new THREE.PlaneGeometry(9, 240), new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 1 }));
+    under.rotation.x = -Math.PI / 2;
+    under.position.set(B, 0.04, 0);
+    scene.add(under);
+    makeKmSign(scene, B + 90, HZ - W / 2 - 3, 'BRO!');
+  }
+
+  // HOPPBRON vid 9,3 km — ramp upp, 24 m GAP, landningsramp. BILAR SKA FLYGA.
+  {
+    const B = SX - 9300;
+    const upAng = Math.atan(4.6 / 24);
+    slab(B + 30, 2.3, HZ, 24.5, 0.4, W, -upAng);
+    for (const sz of [-1, 1]) {
+      slab(B + 30, 3.1, HZ + sz * (W / 2 - 0.3), 24, 0.6, 0.5, -upAng, railM2, false);
+    }
+    const dnAng = Math.atan(4.2 / 34);
+    slab(B - 23, 2.05, HZ, 34.5, 0.4, W, dnAng);
+    makeKmSign(scene, B + 60, HZ - W / 2 - 3, 'HOPP!');
+  }
+
+  // VÅGFÄLT vid 2,6 & 10,8 km — tre gupp som ger luft i hög fart
+  for (const fx of [2600, 10800]) {
+    for (let b = 0; b < 3; b++) {
+      const bx = SX - fx - b * 26;
+      const ang = Math.atan(0.9 / 6.5);
+      slab(bx + 3.2, 0.42, HZ, 7, 0.3, W, -ang);
+      slab(bx - 3.2, 0.42, HZ, 7, 0.3, W, ang);
+    }
+  }
+
+  // Boostlinje längs HELA banan (utöver variantboostarna)
+  const SHARED_BOOST = [];
+  for (let k = 1; k <= 12; k++) {
+    const bx = SX - k * 1050 + 180;
+    const bz = HZ + (k % 2 ? 11 : -11);
+    SHARED_BOOST.push({ x: bx, z: bz, hl: 5, hw: 3.2 });
+    const pad = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 6.4),
+      new THREE.MeshBasicMaterial({ map: boostTex, transparent: true, opacity: 0.9 })
+    );
+    pad.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    pad.position.set(bx, 0.055, bz);
+    scene.add(pad);
+  }
+
   // Järnväg som korsar BÅDA rakorna + tåg
   const railM = new THREE.MeshStandardMaterial({ color: 0x3c4148, metalness: 0.7, roughness: 0.5 });
   for (const rx of [-0.8, 0.8]) {
@@ -357,8 +426,8 @@ export function buildWorld(ctx) {
   ]);
   const raceGates = makeGateRow(ctx, scene, [-20, -12, -4, 4, 12, 20].map(dx => ({ x: SX + dx, z: HZ - 12.6, yaw: 0 })), 4);
   const raceGrid = [];
-  for (const zz of [HZ - 44, HZ - 34, HZ - 24]) for (const dx of [-15, -5, 5, 15]) {
-    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI });
+  for (const zz of [HZ - 48, HZ - 40, HZ - 32, HZ - 24, HZ - 16]) for (const dx of [-15, -5, 5, 15]) {
+    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI }); // 20 rutor
   }
 
   // === TYDLIG STARTFÅLLA: målad yta + ledfyr + pilar från lobbyn ===
@@ -574,9 +643,9 @@ export function buildWorld(ctx) {
 
   // ============ BANVARIANTER — röstas fram, allt efter grindarna byts ============
   const variants = [
-    { namn: 'KLASSIKERN', trafik: 9, tagPeriod: 80, meshes: [], fixed: [], props: [], boostPads: [] },
-    { namn: 'TRAFIKKAOS', trafik: 24, tagPeriod: 48, meshes: [], fixed: [], props: [], boostPads: [] },
-    { namn: 'RAMPFESTEN', trafik: 4, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [] },
+    { namn: 'KLASSIKERN', trafik: 7, tagPeriod: 80, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
+    { namn: 'TRAFIKKAOS', trafik: 12, tagPeriod: 48, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
+    { namn: 'RAMPFESTEN', trafik: 4, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
   ];
   const vMesh = (v, m) => { scene.add(m); v.meshes.push(m); return m; };
   const vFixed = (v, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0) => {
@@ -584,6 +653,7 @@ export function buildWorld(ctx) {
     if (r) v.fixed.push({ body: r.body, x, y, z });
   };
   const vRefuge = (v, rx, off, len) => {
+    for (let k = -len / 2; k <= len / 2; k += 8) v.avoid.push({ x: rx + k, z: HZ + off, r: 1.5 });
     vFixed(v, rx, 0.5, HZ + off, len / 2, 0.5, 0.7);
     const island = new THREE.Mesh(new THREE.BoxGeometry(len, 1, 1.4), refM);
     island.position.set(rx, 0.5, HZ + off);
@@ -596,6 +666,7 @@ export function buildWorld(ctx) {
     }
   };
   const vRamp = (v, rx, off) => {
+    v.avoid.push({ x: rx, z: HZ + off, r: 6.5 });
     const ang = 0.16;
     vFixed(v, rx, 0.62, HZ + off, 4.5, 0.15, 7, 0, true, 0, -ang);
     const rm = new THREE.Mesh(
@@ -635,6 +706,7 @@ export function buildWorld(ctx) {
       const rx = SX - 800 - k * 780 - hash(k) * 160;
       if (rx < SX - CONF.RACE_DIST + 400) break;
       if (Math.abs(rx - TRAIN_X) < 60) continue;
+      if (FEAT_X.some(f => Math.abs(rx - (SX - f)) < 110)) continue;
       vRefuge(v, rx, (k % 3 === 2) ? (k % 2 ? 4.5 : -4.5) : 0, 24 + hash(k + 50) * 16);
     }
     for (const [km, off] of [[3.5, -11], [7.2, 11], [10.4, -11]]) vRamp(v, SX - km * 1000, off);
@@ -650,6 +722,7 @@ export function buildWorld(ctx) {
       const rx = SX - 900 - k * 1000;
       if (rx < SX - CONF.RACE_DIST + 400) break;
       if (Math.abs(rx - TRAIN_X) < 90) continue;
+      if (FEAT_X.some(f => Math.abs(rx - (SX - f)) < 130)) continue;
       vRefuge(v, rx, 0, 70);
     }
     for (let k = 1; k <= 5; k++) vBoost(v, SX - k * 2300 + 300, HZ - 12);
@@ -661,7 +734,9 @@ export function buildWorld(ctx) {
   {
     const v = variants[2];
     for (let k = 0; k < 9; k++) {
-      vRamp(v, SX - 1200 - k * 1300, (k % 2 ? 11 : -11));
+      const rx = SX - 1200 - k * 1300;
+      if (FEAT_X.some(f => Math.abs(rx - (SX - f)) < 110)) continue;
+      vRamp(v, rx, (k % 2 ? 11 : -11));
     }
     for (let k = 1; k <= 16; k++) vBoost(v, SX - k * 780 + 150, HZ + ((k % 3) - 1) * 11);
     [[6, [0, 3]]].forEach(([km, offs], ci) => {
@@ -680,7 +755,8 @@ export function buildWorld(ctx) {
       i = Math.max(0, Math.min(variants.length - 1, i | 0));
       api.activeVariantIdx = i;
       api.variant = variants[i];
-      api.boostPads = variants[i].boostPads;
+      api.boostPads = SHARED_BOOST.concat(variants[i].boostPads);
+      api.avoid = variants[i].avoid;
       variants.forEach((v, j) => {
         const on = j === i;
         for (const m of v.meshes) m.visible = on;

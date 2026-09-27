@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=5';
-import { Car, spawnY } from './vehicle.js?v=5';
-import { buildWorld } from './world.js?v=5';
-import { RaceManager } from './race.js?v=5';
-import { Bots } from './ai.js?v=5';
-import { Traffic } from './traffic.js?v=5';
-import { Hud } from './hud.js?v=5';
+import { CONF, CARS, PROTO } from './config.js?v=6';
+import { Car, spawnY } from './vehicle.js?v=6';
+import { buildWorld, pathPointAt } from './world.js?v=6';
+import { RaceManager } from './race.js?v=6';
+import { Bots } from './ai.js?v=6';
+import { Traffic } from './traffic.js?v=6';
+import { Hud } from './hud.js?v=6';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -37,6 +37,13 @@ export class HostGame {
         vx: r1(vel.x), vy: r1(vel.y), vz: r1(vel.z),
       }),
       onWreck: (car) => {
+        const rz = car.racing;
+        if (rz?.mode === 'race' && rz.race) {
+          const p = rz.race.parts.get(car);
+          if (p && !p.finished) {
+            car.rescueData = { zone: rz, travel: Math.max(0, p.travel - 80), param: p.lastParam - 80 };
+          }
+        }
         if (car.racing) {
           // Utslagen mitt i loppet — tacklaren får äran
           const av = car.lastHitBy && !car.lastHitBy.disposed ? car.lastHitBy : null;
@@ -332,7 +339,7 @@ export class HostGame {
         this.app.audio.crash(Math.min(1, applied / 22) * Math.max(0.15, 1 - d / 120));
         this.net?.broadcast({ t: 'dmg', x: r1(point.x), y: r1(point.y), z: r1(point.z), i: Math.round(applied) });
         // Riktigt hård tackling → offret lättar från marken
-        if (attacker && dv > 12) {
+        if (attacker && dv > 9) {
           car.body.applyImpulse({ x: 0, y: car.def.mass * CONF.LAUNCH_JUICE, z: 0 }, true);
         }
       }
@@ -390,11 +397,24 @@ export class HostGame {
 
   handleRespawns() {
     const respawn = (car, assign) => {
-      if (!car.wrecked || car.deadT < 3.5) return car;
+      if (!car.wrecked || car.deadT < 2.2) return car;
       const { id, owner, name, defId } = car;
+      const rd = car.rescueData;
       car.dispose();
-      const nc = this.spawnFor(owner, name, defId, Math.floor(Math.random() * 10), id);
-      this.notify(nc, 'toast', 'Ny bil framkörd i depån!');
+      let nc;
+      if (rd && rd.zone.race) {
+        // Lätt att komma tillbaka: ny bil 80 m bakåt PÅ banan, kvar i loppet
+        const o = {};
+        pathPointAt(rd.zone, Math.max(0, rd.param), o);
+        nc = new Car(this.ctx, CARS[defId], new THREE.Vector3(o.x, spawnY(CARS[defId]), o.z),
+          Math.atan2(-o.tx, -o.tz), { id, owner, name, defId });
+        this.broadcastSpawn(nc);
+        this.raceMgr.enroll(rd.zone, nc, false, rd.travel);
+        this.notify(nc, 'announce', '🔧 NY BIL — JAGA IKAPP!');
+      } else {
+        nc = this.spawnFor(owner, name, defId, Math.floor(Math.random() * 10), id);
+        this.notify(nc, 'toast', 'Ny bil framkörd i depån!');
+      }
       assign(nc);
       return nc;
     };

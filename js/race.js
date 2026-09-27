@@ -2,8 +2,8 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=5';
-import { stepGates } from './world.js?v=5';
+import { CONF } from './config.js?v=6';
+import { stepGates } from './world.js?v=6';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -104,8 +104,9 @@ export class RaceManager {
     }
   }
 
-  enroll(z, car, late) {
+  enroll(z, car, late, travel = null) {
     const p = { travel: 0, lastParam: 0, idx: 0, finished: false, place: 0, offT: 0, stageT: 0 };
+    if (travel != null) p.travel = travel;
     if (z.mode === 'race') {
       const np = nearestParam(z, car.pos, -1);
       p.lastParam = np.param;
@@ -146,6 +147,7 @@ export class RaceManager {
         r.finishOrder.push(car);
         p.place = r.finishOrder.length;
         car.speedMult = 1;
+        car.raceVmax = null; car.racePower = null;
         car.racing = null;
         car.raceCooldown = 6;
         car.returnHome = 6; // skjutsas hem till depån — målet ligger 13 km bort
@@ -165,10 +167,12 @@ export class RaceManager {
       const lead = n ? active[0][1].travel : 0;
       active.forEach(([c, p], i) => {
         p.place = r.finishOrder.length + i + 1;
-        // AVSTÅNDET till ettan bestämmer farten: tätt bakom = samma fart
-        // (klunga runt förstaplatsen), långt bak = rejält snabbare.
-        const gap = Math.max(0, lead - p.travel);
-        c.speedMult = 1 + Math.min(CONF.CATCHUP_MAX, gap * CONF.CATCHUP_PER_M);
+        // FARTSTEGEN: ettan 210, tvåan 219, trean 228 … — man kommer ALLTID ikapp.
+        // Stort gap ger dessutom gummiband-bonus så klungan sluter sig.
+        const gapBonus = Math.min(55, Math.max(0, (lead - p.travel) - 250) * CONF.RACE_GAP_BONUS);
+        c.raceVmax = (CONF.RACE_VMAX_BAS + i * CONF.RACE_VMAX_STEG + gapBonus) / 3.6;
+        c.racePower = 1 + i * CONF.RACE_POWER_STEG + gapBonus * 0.006;
+        c.speedMult = 1;
       });
       if (n === 0 || r.t > z.maxT) this.endRace(z);
     }
@@ -212,13 +216,14 @@ export class RaceManager {
     z.race.parts.delete(car);
     car.racing = null;
     car.speedMult = 1;
+    car.raceVmax = null; car.racePower = null;
     car.raceCooldown = 4;
     if (car.owner !== null && msg) this.ctx.notify(car, 'toast', msg);
   }
 
   endRace(z) {
     for (const [car] of z.race.parts) {
-      if (car.racing === z) { car.racing = null; car.speedMult = 1; }
+      if (car.racing === z) { car.racing = null; car.speedMult = 1; car.raceVmax = null; car.racePower = null; }
     }
     z.race = null;
     z.gatesOpen = false;
