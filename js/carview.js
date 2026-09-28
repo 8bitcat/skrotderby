@@ -57,6 +57,7 @@ export class CarView {
     const flags = row[11];
     this.wrecked = !!(flags & 1);
     this.turbo = !!(flags & 4);
+    this.scraping = !!(flags & 8);
     if ((flags & 2) && !this.exploded) {
       this.exploded = true;
       for (const m of this.bodyMeshes) m.material.color?.setHex(0x181818);
@@ -140,6 +141,13 @@ export class CarView {
     }
 
     if (particles && this.group.visible) {
+      if (this.scraping && !this.wrecked) {
+        // gnistor mot väggen (sida beror på var kanten är — spreta åt båda håll lite)
+        const side = ((this.id % 2) ? 1 : -1);
+        _v.set(side * this.def.dims.w * 0.5, -this.def.dims.h * 0.3, 0).applyQuaternion(this.quat).add(this.pos);
+        const f = this.fwd;
+        particles.sparks(_v, 3, 0xffd060, 6 + this.kmh * 0.06, { dir: { x: -f.x, z: -f.z }, bias: 0.7, life: 0.45 });
+      }
       if (!this.wrecked && this.health01 < 0.45) {
         this._smokeAcc += dt * (0.5 - this.health01) * 14;
         while (this._smokeAcc > 1) {

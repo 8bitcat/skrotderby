@@ -256,7 +256,7 @@ export class HostGame {
         r3(c.quat.x), r3(c.quat.y), r3(c.quat.z), r3(c.quat.w),
         r2(c.steerCur), Math.round(Math.abs(c.speed) * 3.6),
         Math.round(100 * Math.max(0, c.health) / c.maxHealth),
-        (c.wrecked ? 1 : 0) | (c.exploded ? 2 : 0) | (c.turboT > 0 ? 4 : 0),
+        (c.wrecked ? 1 : 0) | (c.exploded ? 2 : 0) | (c.turboT > 0 ? 4 : 0) | (c.scraping ? 8 : 0),
         c.partMask(), c.wheelMask(), Math.round(c.score),
         st ? (st.mode === 'race' ? [1, Math.round(st.dist / 100), Math.round(st.total / 100), st.place, st.n] : [2, st.kvar, Math.round(st.t)]) : 0,
         c.brokenMask(),
@@ -299,6 +299,37 @@ export class HostGame {
           a.sidePress = true;
           b.sidePress = true;
         }
+      }
+    }
+  }
+
+  // Gnistor när en bil skrapar mot en vägg/refug (sidoraycast)
+  scrapeScan() {
+    const R = this.ctx.RAPIER, world = this.ctx.world;
+    const cars = this.ctx.allCars;
+    for (const c of cars) c.scraping = 0;
+    const px = this.player.pos.x, pz = this.player.pos.z;
+    for (const c of cars) {
+      if (c.disposed || c.wrecked || c.absSpeed < 9) continue;
+      if (Math.hypot(c.pos.x - px, c.pos.z - pz) > 90) continue; // bara nära kameran
+      const half = c.def.dims.w / 2;
+      for (const side of [1, -1]) {
+        const ox = c.pos.x, oy = c.pos.y, oz = c.pos.z;
+        const dx = c.right.x * side, dz = c.right.z * side;
+        if (!this._ray) this._ray = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+        this._ray.origin.x = ox; this._ray.origin.y = oy; this._ray.origin.z = oz;
+        this._ray.dir.x = dx; this._ray.dir.y = 0; this._ray.dir.z = dz;
+        const hit = world.castRay(this._ray, half + 0.45, true, undefined, undefined, undefined, c.body);
+        if (!hit) continue;
+        const col = hit.collider;
+        if (col && this.ctx.carsByCollider.has(col.handle)) continue; // bil, inte vägg
+        const toi = hit.toi ?? hit.timeOfImpact;
+        const hx = ox + dx * toi, hz = oz + dz * toi;
+        // gnistor sprutar bakåt längs färdriktningen
+        const n = 2 + Math.floor(c.absSpeed / 10);
+        c.scraping = 1;
+        this.ctx.particles.sparks({ x: hx, y: oy - c.def.dims.h * 0.35, z: hz }, n, 0xffd060,
+          6 + c.absSpeed * 0.25, { dir: { x: -c.fwd.x, z: -c.fwd.z }, bias: 0.7, life: 0.45 });
       }
     }
   }
@@ -358,7 +389,7 @@ export class HostGame {
           c.boostCd = 2;
           const m = c.def.mass * 6;
           c.body.applyImpulse({ x: c.fwd.x * m, y: 0, z: c.fwd.z * m }, true);
-          this.ctx.particles.sparks(c.pos, 22, 0x54ff9a, 10);
+          this.ctx.particles.sparks(c.pos, 40, 0x54ff9a, 13, { dir: { x: c.fwd.x, z: c.fwd.z }, bias: 0.5, life: 0.6 });
           if (c.owner === 'local') this.app.audio.boost();
           this.net?.broadcast({ t: 'fx', k: 'boost', id: c.id, x: r1(c.pos.x), y: r1(c.pos.y), z: r1(c.pos.z) });
           break;
@@ -403,7 +434,12 @@ export class HostGame {
       };
       const applied = car.applyDamage(dmg, point, attacker);
       if (applied > 0) {
-        this.ctx.particles.sparks(point, Math.round(4 + applied), 0xffb347, 7 + applied * 0.3);
+        // Mycket mer partiklar: gnistskur mot smällen + rök vid hårda krockar
+        const P = this.ctx.particles;
+        const sdir = { x: -dvx / dv, z: -dvz / dv };
+        P.sparks(point, Math.round(10 + applied * 2.5), attacker ? 0xffe090 : 0xffb040, 9 + applied * 0.5,
+          { dir: sdir, bias: 0.5, life: 0.6 });
+        if (applied > 8) P.burst(point, Math.min(2.2, applied / 12));
         const dx = point.x - this.player.pos.x, dz = point.z - this.player.pos.z;
         const d = Math.hypot(dx, dz);
         const cm = this.app.camera.matrixWorld.elements;
@@ -592,6 +628,7 @@ export class HostGame {
       this.simT += CONF.DT;
     }
 
+    this.scrapeScan();
     this.bots.update(dt);
     this.traffic.update(dt);
     this.raceMgr.update(dt);

@@ -1,8 +1,8 @@
 // Gnistor (Points, additiv) + rök/eld (sprite-pool). Helt procedurellt.
 import * as THREE from 'three';
 
-const MAXP = 700;
-const MAXSMOKE = 90;
+const MAXP = 2600;
+const MAXSMOKE = 120;
 
 function blobTexture() {
   const cv = document.createElement('canvas');
@@ -55,27 +55,47 @@ export class Particles {
     this._col = new THREE.Color();
   }
 
-  sparks(pos, n, color = 0xffb347, speed = 9) {
-    this._col.setHex(color);
+  // opts: { dir:{x,z}, bias (0..1 hur mycket riktning), life, colors:[hex,...] }
+  sparks(pos, n, color = 0xffb347, speed = 9, opts = {}) {
+    const dir = opts.dir, bias = opts.bias ?? 0;
+    const cols = opts.colors;
     for (let k = 0; k < n; k++) {
+      if (cols) this._col.setHex(cols[(Math.random() * cols.length) | 0]);
+      else this._col.setHex(color);
       const i = this.head;
       this.head = (this.head + 1) % MAXP;
-      this.posA[i * 3] = pos.x;
+      this.posA[i * 3] = pos.x + (Math.random() - 0.5) * 0.3;
       this.posA[i * 3 + 1] = pos.y + 0.2;
-      this.posA[i * 3 + 2] = pos.z;
+      this.posA[i * 3 + 2] = pos.z + (Math.random() - 0.5) * 0.3;
       const a = Math.random() * Math.PI * 2;
       const up = Math.random() * speed * 0.8;
       const r = Math.random() * speed;
-      this.vel[i * 3] = Math.cos(a) * r;
+      let vx = Math.cos(a) * r, vz = Math.sin(a) * r;
+      if (dir && bias) { vx = vx * (1 - bias) + dir.x * speed * bias; vz = vz * (1 - bias) + dir.z * speed * bias; }
+      this.vel[i * 3] = vx;
       this.vel[i * 3 + 1] = up;
-      this.vel[i * 3 + 2] = Math.sin(a) * r;
-      this.life[i] = 0.4 + Math.random() * 0.5;
+      this.vel[i * 3 + 2] = vz;
+      this.life[i] = (opts.life || 0.5) * (0.6 + Math.random() * 0.8);
       const f = 0.6 + Math.random() * 0.4;
       this.colA[i * 3] = this._col.r * f;
       this.colA[i * 3 + 1] = this._col.g * f;
       this.colA[i * 3 + 2] = this._col.b * f;
     }
     this.points.geometry.attributes.color.needsUpdate = true;
+  }
+
+  // Krock-explosion: gnistor + rök + orange eldflaga
+  burst(pos, power = 1) {
+    this.sparks(pos, Math.round(28 * power), 0, 10 + 6 * power, {
+      colors: [0xffd050, 0xff8020, 0xffb347, 0xfff0b0], life: 0.7,
+    });
+    this.sparks(pos, Math.round(14 * power), 0, 4 + 3 * power, {
+      colors: [0x888888, 0x555555, 0x333333], life: 1.1,
+    });
+    for (let k = 0; k < Math.round(3 * power); k++) {
+      this.smoke({ x: pos.x + (Math.random() - 0.5), y: pos.y + 0.3, z: pos.z + (Math.random() - 0.5) },
+        { color: k === 0 ? 0xff7722 : 0x444444, size: 0.8 + Math.random(), life: 0.9 + Math.random() * 0.6, vy: 2.4 });
+    }
   }
 
   smoke(pos, { color = 0x555555, size = 0.9, life = 1.3, vy = 1.6 } = {}) {

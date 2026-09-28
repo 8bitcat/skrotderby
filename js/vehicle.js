@@ -327,9 +327,10 @@ export class Car {
     if (obj3d.parent) obj3d.parent.remove(obj3d);
     scene.add(obj3d);
     obj3d.position.copy(wp); obj3d.quaternion.copy(wq);
-    const vx = this.vel.x + rnd(-2.5, 2.5);
-    const vy = Math.max(1, this.vel.y) + rnd(2.5, 5.5) + extraUp;
-    const vz = this.vel.z + rnd(-2.5, 2.5);
+    const boost = 1 + extraUp * 0.15;
+    const vx = this.vel.x + rnd(-3.5, 3.5) * boost;
+    const vy = Math.max(1, this.vel.y) + rnd(3, 6.5) + extraUp;
+    const vz = this.vel.z + rnd(-3.5, 3.5) * boost;
     const rbd = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(wp.x, wp.y, wp.z)
       .setRotation({ x: wq.x, y: wq.y, z: wq.z, w: wq.w })
@@ -350,7 +351,8 @@ export class Car {
     p.attached = false;
     const mass = Math.min(38, Math.max(6, p.size.x * p.size.y * p.size.z * 90));
     const info = this._spawnLoose(p.mesh, p.size, mass, extraUp);
-    this.ctx.particles.sparks(info.pos, 10, 0xffb347, 7);
+    this.ctx.particles.sparks(info.pos, 16, 0xffc060, 8, { life: 0.6 });
+    this.ctx.particles.smoke(info.pos, { color: 0x777777, size: 0.5, life: 0.5, vy: 1 });
     this.ctx.onDetach?.(this, p.name, info.pos, info.vel, p.size);
   }
 
@@ -378,7 +380,7 @@ export class Car {
       body
     );
     this.ctx.addLoose({ mesh: obj3d, body, life: CONF.LOOSE_LIFE });
-    this.ctx.particles.sparks(wp, 12, 0xffb347, 8);
+    this.ctx.particles.sparks(wp, 18, 0xffc060, 9, { life: 0.6 });
     this.ctx.onDetach?.(this, 'hjul' + i, wp, body.linvel(), new THREE.Vector3(w.radius * 2, w.radius * 2, w.radius * 2));
   }
 
@@ -439,7 +441,8 @@ export class Car {
         this.wheels.forEach((w, i) => { if (!w.steered) this.detachWheel(i, 4); });
         for (const m of this.bodyMeshes) m.material.color?.setHex(0x181818);
         this.body.applyImpulse({ x: 0, y: this.def.mass * 4.5, z: 0 }, true);
-        this.ctx.particles.sparks(this.pos, 60, 0xffaa33, 14);
+        this.ctx.particles.burst(this.pos, 2.2);
+        this.ctx.particles.burst({ x: this.pos.x, y: this.pos.y + 0.8, z: this.pos.z }, 1.6);
         this.ctx.audio.boom(this.isPlayer ? 1 : 0.55);
         this.ctx.onBoom?.(this);
       }
@@ -479,7 +482,7 @@ export class Car {
     w.broken = true;
     w.radius *= 0.8; // punktering: hörnet sjunker
     _a.copy(w.anchorL).applyQuaternion(this.quat).add(this.pos);
-    this.ctx.particles.sparks(_a, 18, 0xffb347, 7);
+    this.ctx.particles.sparks(_a, 26, 0xffc060, 8, { life: 0.6 });
     this.ctx.onWheelBreak?.(this, i, _a);
   }
 
