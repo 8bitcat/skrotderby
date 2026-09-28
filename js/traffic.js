@@ -3,8 +3,9 @@
 // (eller kring startområdet när inget race pågår) och återvinns när de
 // hamnat för långt bort. Kör man sönder dem ger det skrotpoäng.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=19';
-import { Car, spawnY } from './vehicle.js?v=19';
+import { CONF, CARS } from './config.js?v=20';
+import { Car, spawnY } from './vehicle.js?v=20';
+import { trackZ, laneYaw } from './world.js?v=20';
 
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
 
@@ -29,7 +30,7 @@ export class Traffic {
     let front = Infinity, rear = -Infinity;
     for (const c of this.ctx.allCars) {
       if (c.isTraffic || c.disposed) continue;
-      if (Math.abs(c.pos.z - HZ) < 30 && c.pos.x < CONF.STAGE_X + 100) {
+      if (Math.abs(c.pos.z - trackZ(c.pos.x)) < 30 && c.pos.x < CONF.STAGE_X + 100) {
         front = Math.min(front, c.pos.x);
         rear = Math.max(rear, c.pos.x);
       }
@@ -48,8 +49,8 @@ export class Traffic {
     const defId = CONF.VALBARA + (this._seq % 3);
     const def = CARS[defId];
     const x = band.front - 150 - hash(this._seq) * 700;
-    const pos = new THREE.Vector3(x, spawnY(def), HZ + lane.z);
-    const heading = lane.dir < 0 ? Math.PI / 2 : -Math.PI / 2;
+    const pos = new THREE.Vector3(x, spawnY(def), trackZ(x) + lane.z);
+    const heading = (lane.dir < 0 ? Math.PI / 2 : -Math.PI / 2) - laneYaw(x) * lane.dir;
     const car = new Car(this.ctx, def, pos, heading, { name: '', defId });
     car.isTraffic = true;
     car.lane = lane;
@@ -64,7 +65,7 @@ export class Traffic {
     const lane = LANES[this._seq % LANES.length];
     car.lane = lane;
     const x = band.front - 150 - hash(this._seq + 31) * 700;
-    car.resetTo(new THREE.Vector3(x, 1.4, HZ + lane.z), lane.dir < 0 ? Math.PI / 2 : -Math.PI / 2);
+    car.resetTo(new THREE.Vector3(x, 1.4, trackZ(x) + lane.z), (lane.dir < 0 ? Math.PI / 2 : -Math.PI / 2) - laneYaw(x) * lane.dir);
     car.health = car.maxHealth;
   }
 
@@ -91,7 +92,7 @@ export class Traffic {
         }
         // För långt bakom/framför fältet → återvinn framåt
         if (car.pos.x > band.rear + 600 || car.pos.x < band.front - 1400 ||
-            Math.abs(car.pos.z - HZ) > 26 || car.pos.x < CONF.STAGE_X - CONF.RACE_DIST + 200) {
+            Math.abs(car.pos.z - trackZ(car.pos.x)) > 26 || car.pos.x < CONF.STAGE_X - CONF.RACE_DIST + 200) {
           this._recycle(car, band);
         }
       }
@@ -102,7 +103,7 @@ export class Traffic {
       if (car.wrecked || car.disposed) continue;
       const lane = car.lane || LANES[0];
       const targetX = car.pos.x + (lane.dir < 0 ? -40 : 40);
-      const targetZ = HZ + lane.z;
+      const targetZ = trackZ(targetX) + lane.z;
       const dx = targetX - car.pos.x, dz = targetZ - car.pos.z;
       let fx = car.fwd.x, fz = car.fwd.z;
       const fl = Math.hypot(fx, fz) || 1;

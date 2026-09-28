@@ -4,7 +4,7 @@
 // varje modell bär sitt racenummer. Delas av värdens fysikbilar och gästvyer —
 // parts[]-ORDNINGEN måste vara identisk överallt (nätets bitmask).
 import * as THREE from 'three';
-import { CONF } from './config.js?v=19';
+import { CONF } from './config.js?v=20';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 

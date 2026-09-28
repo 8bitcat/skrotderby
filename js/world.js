@@ -2,12 +2,26 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=19';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=19';
-import { PROPS } from './models.js?v=19';
+import { CONF, CARS } from './config.js?v=20';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=20';
+import { PROPS } from './models.js?v=20';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
+
+// Södra racesträckans mjuka svängar — enda källan till sanning (delas med trafik/ai)
+export function swayAt(x) {
+  const S = CONF.TRACK.SWAY, SX = CONF.STAGE_X, HX = CONF.TRACK.HX, R = CONF.TRACK.R;
+  const edge = Math.max(0, Math.min(1, (HX - R - Math.abs(x)) / 40 + 0.001));
+  let z = 0; for (const s of S) z += s.amp * Math.sin((x - SX) / s.len + (s.ph || 0));
+  return z * edge;
+}
+export function trackZ(x) { return CONF.TRACK.HZ + swayAt(x); }
+export function laneYaw(x) {
+  const S = CONF.TRACK.SWAY, SX = CONF.STAGE_X;
+  let d = 0; for (const s of S) d += (s.amp / s.len) * Math.cos((x - SX) / s.len + (s.ph || 0));
+  return -Math.atan2(d, 1);
+}
 
 // ---------- Sökvägs-hjälpare (delas med race.js & ai.js) ----------
 export function makePath(pts) {
@@ -186,9 +200,15 @@ export function buildWorld(ctx) {
     fixedBox(ctx, x, 2.5, z, hx, 2.5, hz, 0, true);
   }
 
-  // ============ LÅNGRACET — 13 km raksträcka ============
+  // ============ LÅNGRACET — lång bana med mjuka svängar ============
+  // Södra raksträckan (race-sidan) svänger fram och tillbaka. En källa till
+  // sanning: trackZ(x)/trackYaw(x). Allt som placeras på banan går via dem.
+  const onSouth = (x, z) => z > HZ - R - 5 && x > -HX + R - 5 && x < HX - R + 5;
+
   let racePts = roundedRectPath(HX, HZ, R);
   racePts = rotateToNearest(racePts, SX, HZ);
+  // Böj södra raksträckans punkter så banan svänger
+  for (const p of racePts) if (onSouth(p.x, p.z)) p.z = trackZ(p.x);
   const racePath = makePath(racePts);
 
   // Asfalt — högupplöst PBR (u längs banan bakat i UV, v-repeat = 4 tvärs)
@@ -225,23 +245,23 @@ export function buildWorld(ctx) {
       new THREE.PlaneGeometry(3, W),
       new THREE.MeshStandardMaterial({ map: startTex, roughness: 0.9 })
     );
-    line.rotation.set(-Math.PI / 2, 0, 0);
-    line.position.set(lx, 0.06, HZ);
+    line.rotation.set(-Math.PI / 2, 0, -laneYaw(lx));
+    line.position.set(lx, 0.06, trackZ(lx));
     scene.add(line);
   }
-  makeArch(ctx, scene, SX, HZ, Math.PI / 2, 'START', W / 2 + 1);
-  makeArch(ctx, scene, SX - CONF.RACE_DIST, HZ, Math.PI / 2, '🏁 MÅL', W / 2 + 1);
+  makeArch(ctx, scene, SX, trackZ(SX), Math.PI / 2 + laneYaw(SX), 'START', W / 2 + 1);
+  makeArch(ctx, scene, SX - CONF.RACE_DIST, trackZ(SX - CONF.RACE_DIST), Math.PI / 2 + laneYaw(SX - CONF.RACE_DIST), '🏁 MÅL', W / 2 + 1);
   makeArch(ctx, scene, SX - 110, HZ - 13, 0, 'KÖR IN — VAR MED DIREKT', 13);
 
   // km-skyltar längs rakan
   for (let k = 1; k <= 12; k++) {
-    makeKmSign(scene, SX - k * 1000, HZ - W / 2 - 3, k + ' km');
+    makeKmSign(scene, SX - k * 1000, trackZ(SX - k * 1000) - W / 2 - 3, k + ' km');
   }
 
   // Sponsorportaler varannan km
   const SPONSORER = ['SKROT-KRAFT', 'DERBY-COLA', 'ROSTFRITT AB', 'KROCK & CO', 'PLÅTIS BILDELAR', 'TURBO-TWIST'];
   [2, 4, 6, 8, 10, 12].forEach((k, i) => {
-    makeArch(ctx, scene, SX - k * 1000 - 500, HZ, Math.PI / 2, SPONSORER[i], W / 2 + 1);
+    makeArch(ctx, scene, SX - k * 1000 - 500, trackZ(SX - k * 1000 - 500), Math.PI / 2 + laneYaw(SX - k * 1000 - 500), SPONSORER[i], W / 2 + 1);
   });
 
   // Betong till refuger/pelare + boost-textur (används av banvarianterna)
@@ -263,11 +283,11 @@ export function buildWorld(ctx) {
   const FEAT_X = [2600, 4600, 9300, 10800]; // håll refuger borta härifrån
   const rampM = new THREE.MeshStandardMaterial({ ...pbr('asphalt_02', 3, 2), roughness: 1 });
   const railM2 = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.6 });
-  const slab = (x, y, z, lx, h, lz, rotZ = 0, mat = rampM, noDmg = true, frict = 0.4) => {
-    fixedBox(ctx, x, y, z, lx / 2, h / 2, lz / 2, 0, noDmg, 0, rotZ, frict);
+  const slab = (x, y, z, lx, h, lz, rotZ = 0, mat = rampM, noDmg = true, frict = 0.4, yaw = 0) => {
+    fixedBox(ctx, x, y, z, lx / 2, h / 2, lz / 2, yaw, noDmg, 0, rotZ, frict);
     const m = new THREE.Mesh(new THREE.BoxGeometry(lx, h, lz), mat);
     m.position.set(x, y, z);
-    m.rotation.z = rotZ;
+    m.rotation.set(0, yaw, rotZ);
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
     return m;
@@ -275,41 +295,41 @@ export function buildWorld(ctx) {
 
   // KÖRBAR BRO vid 4,6 km — upp, 70 m däck på 4 m höjd, ner
   {
-    const B = SX - 4600, ang = Math.atan(4 / 41.5);
-    slab(B + 56, 2, HZ, 42.5, 0.4, W, -ang, rampM, true, 0.06);
-    slab(B, 3.99, HZ, 70, 0.4, W);
-    slab(B - 56, 2, HZ, 42.5, 0.4, W, ang, rampM, true, 0.06);
+    const B = SX - 4600, ang = Math.atan(4 / 41.5), by = laneYaw(B);
+    slab(B + 56, 2, trackZ(B + 56), 42.5, 0.4, W, -ang, rampM, true, 0.06, by);
+    slab(B, 3.99, trackZ(B), 70, 0.4, W, 0, rampM, true, 0.4, by);
+    slab(B - 56, 2, trackZ(B - 56), 42.5, 0.4, W, ang, rampM, true, 0.06, by);
     for (const sz of [-1, 1]) {
-      slab(B, 4.7, HZ + sz * (W / 2 - 0.3), 70, 0.7, 0.5, 0, railM2, false);
+      slab(B, 4.7, trackZ(B) + sz * (W / 2 - 0.3), 70, 0.7, 0.5, 0, railM2, false, 0.4, by);
     }
     // korsande väg under bron
     const under = new THREE.Mesh(new THREE.PlaneGeometry(9, 240), new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 1 }));
     under.rotation.x = -Math.PI / 2;
     under.position.set(B, 0.04, 0);
     scene.add(under);
-    makeKmSign(scene, B + 90, HZ - W / 2 - 3, 'BRO!');
+    makeKmSign(scene, B + 90, trackZ(B + 90) - W / 2 - 3, 'BRO!');
   }
 
   // HOPPBRON vid 9,3 km — ramp upp, 24 m GAP, landningsramp. BILAR SKA FLYGA.
   {
-    const B = SX - 9300;
+    const B = SX - 9300, by = laneYaw(B);
     const upAng = Math.atan(4.6 / 33.6);
-    slab(B + 35, 2.3, HZ, 34.5, 0.4, W, -upAng, rampM, true, 0.06);
+    slab(B + 35, 2.3, trackZ(B + 35), 34.5, 0.4, W, -upAng, rampM, true, 0.06, by);
     for (const sz of [-1, 1]) {
-      slab(B + 35, 3.1, HZ + sz * (W / 2 - 0.3), 34, 0.6, 0.5, -upAng, railM2, false);
+      slab(B + 35, 3.1, trackZ(B + 35) + sz * (W / 2 - 0.3), 34, 0.6, 0.5, -upAng, railM2, false, 0.4, by);
     }
     const dnAng = Math.atan(4.2 / 40);
-    slab(B - 26, 2.05, HZ, 40.5, 0.4, W, dnAng, rampM, true, 0.06);
-    makeKmSign(scene, B + 60, HZ - W / 2 - 3, 'HOPP!');
+    slab(B - 26, 2.05, trackZ(B - 26), 40.5, 0.4, W, dnAng, rampM, true, 0.06, by);
+    makeKmSign(scene, B + 60, trackZ(B + 60) - W / 2 - 3, 'HOPP!');
   }
 
   // VÅGFÄLT vid 2,6 & 10,8 km — tre gupp som ger luft i hög fart
   for (const fx of [2600, 10800]) {
     for (let b = 0; b < 3; b++) {
-      const bx = SX - fx - b * 26;
+      const bx = SX - fx - b * 26, by = laneYaw(bx);
       const ang = Math.atan(0.55 / 6.5);
-      slab(bx + 3.2, 0.32, HZ, 7, 0.3, W, -ang, rampM, true, 0.06);
-      slab(bx - 3.2, 0.32, HZ, 7, 0.3, W, ang, rampM, true, 0.06);
+      slab(bx + 3.2, 0.32, trackZ(bx + 3.2), 7, 0.3, W, -ang, rampM, true, 0.06, by);
+      slab(bx - 3.2, 0.32, trackZ(bx - 3.2), 7, 0.3, W, ang, rampM, true, 0.06, by);
     }
   }
 
@@ -335,14 +355,14 @@ export function buildWorld(ctx) {
     rail.position.set(TRAIN_X + rx, 0.11, 0);
     scene.add(rail);
   }
-  for (const cz of [HZ, -HZ]) {
+  for (const cz of [trackZ(TRAIN_X), -HZ]) {
     const plank = new THREE.Mesh(new THREE.PlaneGeometry(7, W + 4), new THREE.MeshStandardMaterial({ map: stripeMat().map, roughness: 0.8 }));
     plank.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
     plank.position.set(TRAIN_X, 0.045, cz);
     scene.add(plank);
   }
   const crossingLights = [];
-  for (const cz of [HZ - W / 2 - 2.5, HZ + W / 2 + 2.5, -HZ - W / 2 - 2.5, -HZ + W / 2 + 2.5]) {
+  for (const cz of [trackZ(TRAIN_X) - W / 2 - 2.5, trackZ(TRAIN_X) + W / 2 + 2.5, -HZ - W / 2 - 2.5, -HZ + W / 2 + 2.5]) {
     for (const sx of [-6, 6]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.4, 0.25), new THREE.MeshStandardMaterial({ color: 0xd8d3c8 }));
       post.position.set(TRAIN_X + sx, 1.7, cz);
@@ -654,33 +674,34 @@ export function buildWorld(ctx) {
     if (r) v.fixed.push({ body: r.body, x, y, z });
   };
   const vRefuge = (v, rx, off, len) => {
-    for (let k = -len / 2; k <= len / 2; k += 8) v.avoid.push({ x: rx + k, z: HZ + off, r: 1.5 });
-    vFixed(v, rx, 0.5, HZ + off, len / 2, 0.5, 0.7);
+    const zc = trackZ(rx) + off, yaw = laneYaw(rx);
+    for (let k = -len / 2; k <= len / 2; k += 8) v.avoid.push({ x: rx + k, z: trackZ(rx + k) + off, r: 1.5 });
+    vFixed(v, rx, 0.5, zc, len / 2, 0.5, 0.7, yaw);
     const island = new THREE.Mesh(new THREE.BoxGeometry(len, 1, 1.4), refM);
-    island.position.set(rx, 0.5, HZ + off);
+    island.position.set(rx, 0.5, zc); island.rotation.y = yaw;
     island.castShadow = true;
     vMesh(v, island);
     for (const e of [-1, 1]) {
       const cap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.15, 1.5), stripeMat());
-      cap.position.set(rx + e * (len / 2 + 0.3), 0.57, HZ + off);
+      cap.position.set(rx + e * Math.cos(yaw) * (len / 2 + 0.3), 0.57, zc + e * Math.sin(yaw) * (len / 2 + 0.3));
+      cap.rotation.y = yaw;
       vMesh(v, cap);
     }
   };
   const vRamp = (v, rx, off) => {
-    v.avoid.push({ x: rx, z: HZ + off, r: 9 });
+    const zc = trackZ(rx) + off, yaw = laneYaw(rx);
+    v.avoid.push({ x: rx, z: zc, r: 9 });
     const ang = 0.09; // flack nog att ta i 300 km/h — hoppet ska ALLTID funka
-    vFixed(v, rx, 0.62, HZ + off, 8, 0.15, 7, 0, true, 0, -ang, 0.06);
+    vFixed(v, rx, 0.62, zc, 8, 0.15, 7, yaw, true, 0, -ang, 0.06);
     const rm = new THREE.Mesh(
       new THREE.BoxGeometry(16, 0.3, 14),
       new THREE.MeshStandardMaterial({ color: 0x565c64, roughness: 0.8 })
     );
-    rm.position.set(rx, 0.62, HZ + off);
-    rm.rotation.z = -ang;
+    rm.position.set(rx, 0.62, zc); rm.rotation.set(0, yaw, -ang);
     rm.castShadow = true;
     vMesh(v, rm);
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 14), stripeMat());
-    edge.position.set(rx - 7.8, 1.42, HZ + off);
-    edge.rotation.z = -ang;
+    edge.position.set(rx - 7.8, 1.42, trackZ(rx - 7.8) + off); edge.rotation.set(0, yaw, -ang);
     vMesh(v, edge);
   };
   const vBoost = (v, bx, bz) => {
@@ -689,7 +710,7 @@ export function buildWorld(ctx) {
       new THREE.PlaneGeometry(10, 6.4),
       new THREE.MeshBasicMaterial({ map: boostTex, transparent: true, opacity: 0.9 })
     );
-    pad.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    pad.rotation.set(-Math.PI / 2, 0, Math.PI / 2 - laneYaw(bx));
     pad.position.set(bx, 0.055, bz);
     vMesh(v, pad);
   };
@@ -711,9 +732,9 @@ export function buildWorld(ctx) {
       vRefuge(v, rx, (k % 3 === 2) ? (k % 2 ? 4.5 : -4.5) : 0, 24 + hash(k + 50) * 16);
     }
     for (const [km, off] of [[3.5, -11], [7.2, 11], [10.4, -11]]) vRamp(v, SX - km * 1000, off);
-    for (let k = 1; k <= 10; k++) vBoost(v, SX - k * 1200 + 320, HZ + (k % 2 ? 7 : -7));
+    for (let k = 1; k <= 10; k++) { const bx = SX - k * 1200 + 320; vBoost(v, bx, trackZ(bx) + (k % 2 ? 7 : -7)); }
     [[2.1, [-14, -11, 12]], [4.4, [9, 13, -13]], [6.6, [-10, 15, 8]], [8.9, [12, -12, -15]]].forEach(([km, offs], ci) => {
-      offs.forEach((off, i) => vProp(v, (ci + i) % 2 ? 'tunna' : 'kon', SX - km * 1000 + hash(ci * 7 + i) * 30, HZ + off));
+      offs.forEach((off, i) => { const px = SX - km * 1000 + hash(ci * 7 + i) * 30; vProp(v, (ci + i) % 2 ? 'tunna' : 'kon', px, trackZ(px) + off); });
     });
   }
   // TRAFIKKAOS: lång mittbarriär med luckor + massor av trafik (styrs via v.trafik)
@@ -726,9 +747,9 @@ export function buildWorld(ctx) {
       if (FEAT_X.some(f => Math.abs(rx - (SX - f)) < 130)) continue;
       vRefuge(v, rx, 0, 70);
     }
-    for (let k = 1; k <= 5; k++) vBoost(v, SX - k * 2300 + 300, HZ - 12);
+    for (let k = 1; k <= 5; k++) { const bx = SX - k * 2300 + 300; vBoost(v, bx, trackZ(bx) - 12); }
     [[5.5, [12, -13]]].forEach(([km, offs], ci) => {
-      offs.forEach((off, i) => vProp(v, i % 2 ? 'tunna' : 'kon', SX - km * 1000 + hash(ci + i) * 20, HZ + off));
+      offs.forEach((off, i) => { const px = SX - km * 1000 + hash(ci + i) * 20; vProp(v, i % 2 ? 'tunna' : 'kon', px, trackZ(px) + off); });
     });
   }
   // RAMPFESTEN: ramper + boostar överallt
@@ -739,9 +760,9 @@ export function buildWorld(ctx) {
       if (FEAT_X.some(f => Math.abs(rx - (SX - f)) < 110)) continue;
       vRamp(v, rx, (k % 2 ? 11 : -11));
     }
-    for (let k = 1; k <= 16; k++) vBoost(v, SX - k * 780 + 150, HZ + ((k % 3) - 1) * 11);
+    for (let k = 1; k <= 16; k++) { const bx = SX - k * 780 + 150; vBoost(v, bx, trackZ(bx) + ((k % 3) - 1) * 11); }
     [[6, [0, 3]]].forEach(([km, offs], ci) => {
-      offs.forEach((off, i) => vProp(v, 'tunna', SX - km * 1000 + i * 8, HZ + off));
+      offs.forEach((off, i) => { const px = SX - km * 1000 + i * 8; vProp(v, 'tunna', px, trackZ(px) + off); });
     });
   }
 

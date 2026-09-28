@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 19;
+export const PROTO = 20;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -42,7 +42,7 @@ export const CONF = {
 
   // Världen & banan — MEGA-raksträcka (~13 km ≈ 5 min i full gas)
   WORLD: { WX: 7150, WZ: 700 },
-  TRACK: { HX: 6800, HZ: 150, R: 60, W: 40 },
+  TRACK: { HX: 6800, HZ: 150, R: 60, W: 40, SWAY: [{ amp: 34, len: 1500 }, { amp: 15, len: 560, ph: 1.7 }] },
   RACE_DIST: 13000,       // mål efter 13 km av södra raksträckan
   // Navet i öster där allt utgår ifrån
   LOBBY: { x: 6520, z: 0 },

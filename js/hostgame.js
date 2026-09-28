@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=19';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=19';
-import { buildWorld, pathPointAt } from './world.js?v=19';
-import { RaceManager, nearestParam } from './race.js?v=19';
-import { Bots } from './ai.js?v=19';
-import { Traffic } from './traffic.js?v=19';
-import { Hud } from './hud.js?v=19';
+import { CONF, CARS, PROTO } from './config.js?v=20';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=20';
+import { buildWorld, pathPointAt } from './world.js?v=20';
+import { RaceManager, nearestParam } from './race.js?v=20';
+import { Bots } from './ai.js?v=20';
+import { Traffic } from './traffic.js?v=20';
+import { Hud } from './hud.js?v=20';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
