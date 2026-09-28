@@ -1,8 +1,42 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=16';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=16';
+import { CONF } from './config.js?v=17';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=17';
+import { pathPointAt } from './world.js?v=17';
+
+// ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
+export function spotFree(cars, x, z, r = 5.5, except = null) {
+  for (const c of cars) {
+    if (c === except || c.disposed) continue;
+    const dx = c.pos.x - x, dz = c.pos.z - z;
+    if (dx * dx + dz * dz < r * r && Math.abs(c.pos.y - 1) < 8) return false;
+  }
+  return true;
+}
+
+// Närmaste lediga punkt längs banan kring param (prövar filer + små förskjutningar)
+export function freeTrackSpot(zone, param, cars, except = null) {
+  const o = {};
+  for (const dp of [0, -18, 18, -36, 36, -60, 60, -90]) {
+    pathPointAt(zone, param + dp, o);
+    for (const lane of [0, -7, 7, -13, 13, -3.5, 3.5]) {
+      const x = o.x - o.tz * lane, z = o.z + o.tx * lane;
+      if (spotFree(cars, x, z, 5.5, except)) return { x, z, heading: Math.atan2(-o.tx, -o.tz), dp };
+    }
+  }
+  pathPointAt(zone, param, o);
+  return { x: o.x, z: o.z, heading: Math.atan2(-o.tx, -o.tz), dp: 0 };
+}
+
+// Ledig ruta i lobbyn
+export function freeLobbySpawn(lobby, cars, start = 0) {
+  for (let k = 0; k < 24; k++) {
+    const sp = lobby.spawn(start + k);
+    if (spotFree(cars, sp.pos.x, sp.pos.z, 5)) return sp;
+  }
+  return lobby.spawn(start);
+}
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(),
@@ -205,14 +239,31 @@ export class Car {
 
       // Längskraft i kontaktpunkten — men SIDOKRAFT i tyngdpunktshöjd,
       // så kurvtagning inte skapar vältmoment. Drift, inte volt!
-      _d.copy(this._wf).multiplyScalar(longImp);
-      rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _c.y, z: _c.z }, true);
+      // Drivkraft/broms OCKSÅ i tyngdpunktshöjd: annars lyfter gaspådrag fronten
+      // (ingen last = inget grepp) och bilen går inte att svänga med gasen i botten
       _e.copy(this.comOffset).applyQuaternion(this.quat).add(this.pos);
+      _d.copy(this._wf).multiplyScalar(longImp);
+      rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _e.y, z: _c.z }, true);
       _d.copy(this._wr).multiplyScalar(latImp);
       rb.applyImpulseAtPoint({ x: _d.x, y: _d.y, z: _d.z }, { x: _c.x, y: _e.y, z: _c.z }, true);
       w.spin += vF2 / w.radius * dt;
     }
     this.grounded = grounded > 0;
+
+    // Stabilitetshjälp: girhastigheten får inte skena förbi vad ratten ber om
+    // (ingen okontrollerad snurr av gaspådrag) — tacklingar och handbroms undantagna
+    if (this.grounded && !this.input.handbrake && !this.sidePress && this.absSpeed > 8) {
+      const wb = Math.max(1.5, this.wheels[2].anchorL.z - this.wheels[0].anchorL.z);
+      const want = (vFwd * Math.tan(this.steerCur)) / wb;          // kinematisk girhastighet
+      const yaw = this.angv.dot(this.up);
+      const lim = Math.abs(want) + 0.35;
+      if (Math.abs(yaw) > lim) {
+        const excess = yaw - Math.sign(yaw) * lim;
+        const I = def.mass * (def.dims.l * def.dims.l + def.dims.w * def.dims.w) / 12;
+        const k = Math.min(1, 6 * dt) * excess * I;
+        rb.applyTorqueImpulse({ x: -this.up.x * k, y: -this.up.y * k, z: -this.up.z * k }, true);
+      }
+    }
     // SHIFT = hopp — man ska alltid kunna hoppa
     if (this.input.hop && this.grounded && !(this.hopCd > 0)) {
       this.hopCd = 2.5;

@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=16';
-import { Car, spawnY } from './vehicle.js?v=16';
-import { buildWorld, pathPointAt } from './world.js?v=16';
-import { RaceManager, nearestParam } from './race.js?v=16';
-import { Bots } from './ai.js?v=16';
-import { Traffic } from './traffic.js?v=16';
-import { Hud } from './hud.js?v=16';
+import { CONF, CARS, PROTO } from './config.js?v=17';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=17';
+import { buildWorld, pathPointAt } from './world.js?v=17';
+import { RaceManager, nearestParam } from './race.js?v=17';
+import { Bots } from './ai.js?v=17';
+import { Traffic } from './traffic.js?v=17';
+import { Hud } from './hud.js?v=17';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -94,7 +94,7 @@ export class HostGame {
 
   spawnFor(owner, name, defId, spawnIdx, id) {
     const def = CARS[defId] ?? CARS[0];
-    const sp = this.worldApi.lobby.spawn(spawnIdx);
+    const sp = freeLobbySpawn(this.worldApi.lobby, this.ctx.allCars, spawnIdx);
     const pos = sp.pos.clone();
     pos.y = spawnY(def);
     const car = new Car(this.ctx, def, pos, sp.heading, { owner, name, defId, id });
@@ -485,12 +485,11 @@ export class HostGame {
       let nc;
       if (rd && rd.zone.race) {
         // Lätt att komma tillbaka: ny bil 80 m bakåt PÅ banan, kvar i loppet
-        const o = {};
-        pathPointAt(rd.zone, Math.max(0, rd.param), o);
-        nc = new Car(this.ctx, CARS[defId], new THREE.Vector3(o.x, spawnY(CARS[defId]), o.z),
-          Math.atan2(-o.tx, -o.tz), { id, owner, name, defId });
+        const f = freeTrackSpot(rd.zone, Math.max(0, rd.param), this.ctx.allCars);
+        nc = new Car(this.ctx, CARS[defId], new THREE.Vector3(f.x, spawnY(CARS[defId]), f.z),
+          f.heading, { id, owner, name, defId });
         this.broadcastSpawn(nc);
-        this.raceMgr.enroll(rd.zone, nc, false, rd.travel);
+        this.raceMgr.enroll(rd.zone, nc, false, Math.max(0, rd.travel + f.dp));
         this.notify(nc, 'announce', '🔧 NY BIL — JAGA IKAPP!');
       } else {
         nc = this.spawnFor(owner, name, defId, Math.floor(Math.random() * 10), id);
@@ -511,7 +510,7 @@ export class HostGame {
       if (!c.returnHome || c.returnHome <= 0) continue;
       c.returnHome -= dt;
       if (c.returnHome <= 0 && !c.wrecked && !c.disposed && !c.racing) {
-        const sp = this.worldApi.lobby.spawn(Math.floor(Math.random() * 12));
+        const sp = freeLobbySpawn(this.worldApi.lobby, this.ctx.allCars, Math.floor(Math.random() * 12));
         c.resetTo(new THREE.Vector3(sp.pos.x, 2.2, sp.pos.z), sp.heading);
         if (c.owner !== null) this.notify(c, 'toast', 'Tillbaka i depån — bra kört!');
       }
@@ -534,9 +533,8 @@ export class HostGame {
         c.offTrackT = (c.offTrackT || 0) + step;
         if (c.offTrackT > 4) {
           c.offTrackT = 0;
-          const o = {};
-          pathPointAt(z, np.param, o);
-          c.resetTo(new THREE.Vector3(o.x, 1.6, o.z), Math.atan2(-o.tx, -o.tz));
+          const f = freeTrackSpot(z, np.param, this.ctx.allCars, c);
+          c.resetTo(new THREE.Vector3(f.x, 1.6, f.z), f.heading);
           if (c.owner !== null) this.notify(c, 'announce', '🚧 TILLBAKA PÅ BANAN!');
         }
       } else c.offTrackT = 0;

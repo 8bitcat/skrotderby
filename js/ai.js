@@ -1,9 +1,9 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=16';
-import { Car, spawnY } from './vehicle.js?v=16';
-import { pathPointAt } from './world.js?v=16';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=17';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=17';
+import { pathPointAt } from './world.js?v=17';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -81,12 +81,10 @@ export class Bots {
       if (zone.mode === 'race' && mid && lead) {
         // från 90 m före ettan och bakåt genom klungan
         const off = 90 - placed * 22 - Math.random() * 10;
-        pathPointAt(zone, lead.p.lastParam + off, this._o);
-        const lane = ((placed % 5) - 2) * 5.5;
-        car.resetTo(new THREE.Vector3(this._o.x - this._o.tz * lane, 1.4, this._o.z + this._o.tx * lane),
-          Math.atan2(-this._o.tx, -this._o.tz));
-        car.body.setLinvel({ x: this._o.tx * 45, y: 0, z: this._o.tz * 45 }, true); // flygande start
-        travel = Math.max(0, lead.p.travel + off);
+        const f = freeTrackSpot(zone, lead.p.lastParam + off, this.ctx.allCars, car);
+        car.resetTo(new THREE.Vector3(f.x, 1.4, f.z), f.heading);
+        car.body.setLinvel({ x: -Math.sin(f.heading) * 45, y: 0, z: -Math.cos(f.heading) * 45 }, true); // flygande start
+        travel = Math.max(0, lead.p.travel + off + f.dp);
       } else if (zone.mode === 'race' && freeSlots.length) {
         const g = zone.grid[freeSlots.shift()];
         car.resetTo(new THREE.Vector3(g.pos.x, 1.4, g.pos.z), g.heading);
@@ -107,7 +105,7 @@ export class Bots {
   _newCar(bot) {
     const defId = Math.floor(Math.random() * CARS.length);
     const def = CARS[defId];
-    const sp = this.world.lobby.spawn(this._spawnI++);
+    const sp = freeLobbySpawn(this.world.lobby, this.ctx.allCars, this._spawnI++);
     const pos = sp.pos.clone();
     pos.y = spawnY(def);
     const car = new Car(this.ctx, def, pos, sp.heading, { name: bot.name, defId });
@@ -134,12 +132,12 @@ export class Bots {
           car.dispose();
           if (rd && rd.zone.race) {
             // Tillbaka IN i racet 80 m bakåt — lätt att komma tillbaka
-            pathPointAt(rd.zone, Math.max(0, rd.param), this._o);
+            const f = freeTrackSpot(rd.zone, Math.max(0, rd.param), this.ctx.allCars);
             const def = CARS[defId];
-            const nc = new Car(this.ctx, def, new THREE.Vector3(this._o.x, spawnY(def), this._o.z),
-              Math.atan2(-this._o.tx, -this._o.tz), { name: bot.name, defId });
+            const nc = new Car(this.ctx, def, new THREE.Vector3(f.x, spawnY(def), f.z),
+              f.heading, { name: bot.name, defId });
             this.ctx.onSpawnCar?.(nc);
-            this.raceMgr.enroll(rd.zone, nc, false, rd.travel);
+            this.raceMgr.enroll(rd.zone, nc, false, Math.max(0, rd.travel + f.dp));
             bot.car = nc;
             bot.state = 'RACE';
           } else {
@@ -252,8 +250,8 @@ export class Bots {
           if (car.absSpeed < 2.5) bot.slowT = (bot.slowT || 0) + dt; else bot.slowT = 0;
           if (bot.slowT > 6) {
             bot.slowT = 0;
-            pathPointAt(z, param + 6, this._o);
-            car.resetTo(new THREE.Vector3(this._o.x, 1.6, this._o.z), Math.atan2(-this._o.tx, -this._o.tz));
+            const f = freeTrackSpot(z, param + 6, this.ctx.allCars, car);
+            car.resetTo(new THREE.Vector3(f.x, 1.6, f.z), f.heading);
           }
         } else {
           bot.preyT -= dt;
