@@ -1,14 +1,15 @@
 // Gästens bild av en bil: interpolerar värdens snapshots, släpper delar visuellt
 // och röker/brinner utifrån hälsoflaggorna. Ingen fysik körs här.
 import * as THREE from 'three';
-import { CARS } from './config.js?v=20';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=20';
+import { CARS, SHOP } from './config.js?v=21';
+export const equipFromMask = (m) => SHOP.filter((it, i) => m & (1 << i)).map(it => it.id);
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=21';
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 
 export class CarView {
-  constructor(scene, id, defId, name, isMine) {
+  constructor(scene, id, defId, name, isMine, equip) {
     this.scene = scene;
     this.id = id;
     this.defId = defId;
@@ -16,7 +17,7 @@ export class CarView {
     const def = CARS[defId] ?? CARS[0];
     this.def = def;
 
-    const built = buildCarVisual(def);
+    const built = buildCarVisual(def, equip || []);
     this.group = built.group;
     this.parts = built.parts;
     this.bodyMeshes = built.bodyMeshes;

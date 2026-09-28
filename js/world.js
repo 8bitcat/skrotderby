@@ -2,9 +2,9 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=20';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=20';
-import { PROPS } from './models.js?v=20';
+import { CONF, CARS } from './config.js?v=21';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=21';
+import { PROPS } from './models.js?v=21';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -242,7 +242,7 @@ export function buildWorld(ctx) {
   });
   for (const lx of [SX, SX - CONF.RACE_DIST]) {
     const line = new THREE.Mesh(
-      new THREE.PlaneGeometry(3, W),
+      new THREE.PlaneGeometry(3, W + 6),
       new THREE.MeshStandardMaterial({ map: startTex, roughness: 0.9 })
     );
     line.rotation.set(-Math.PI / 2, 0, -laneYaw(lx));
@@ -327,9 +327,9 @@ export function buildWorld(ctx) {
   for (const fx of [2600, 10800]) {
     for (let b = 0; b < 3; b++) {
       const bx = SX - fx - b * 26, by = laneYaw(bx);
-      const ang = Math.atan(0.55 / 6.5);
-      slab(bx + 3.2, 0.32, trackZ(bx + 3.2), 7, 0.3, W, -ang, rampM, true, 0.06, by);
-      slab(bx - 3.2, 0.32, trackZ(bx - 3.2), 7, 0.3, W, ang, rampM, true, 0.06, by);
+      const ang = Math.atan(0.42 / 7);
+      slab(bx + 3.5, 0.2, trackZ(bx + 3.5), 8, 0.24, W, -ang, rampM, true, 0.06, by);
+      slab(bx - 3.5, 0.2, trackZ(bx - 3.5), 8, 0.24, W, ang, rampM, true, 0.06, by);
     }
   }
 
@@ -689,19 +689,22 @@ export function buildWorld(ctx) {
     }
   };
   const vRamp = (v, rx, off) => {
-    const zc = trackZ(rx) + off, yaw = laneYaw(rx);
+    const zc = trackZ(rx) + off;
     v.avoid.push({ x: rx, z: zc, r: 9 });
-    const ang = 0.09; // flack nog att ta i 300 km/h — hoppet ska ALLTID funka
-    vFixed(v, rx, 0.62, zc, 8, 0.15, 7, yaw, true, 0, -ang, 0.06);
+    // Lång, flack kicker (världsjusterad pitch, ingen yaw ⇒ funkar på hela banan)
+    const ang = 0.07, L = 24, rise = Math.sin(ang) * (L / 2);
+    const cy = rise - 0.05; // approach-kanten (+x) hamnar under vägbanan → ingen läpp
+    vFixed(v, rx, cy, zc, L / 2, 0.12, 7, 0, true, 0, -ang, 0.06);
     const rm = new THREE.Mesh(
-      new THREE.BoxGeometry(16, 0.3, 14),
+      new THREE.BoxGeometry(L, 0.24, 14),
       new THREE.MeshStandardMaterial({ color: 0x565c64, roughness: 0.8 })
     );
-    rm.position.set(rx, 0.62, zc); rm.rotation.set(0, yaw, -ang);
+    rm.position.set(rx, cy, zc); rm.rotation.set(0, 0, -ang);
     rm.castShadow = true;
     vMesh(v, rm);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 14), stripeMat());
-    edge.position.set(rx - 7.8, 1.42, trackZ(rx - 7.8) + off); edge.rotation.set(0, yaw, -ang);
+    const edge = new THREE.Mesh(new THREE.PlaneGeometry(3, 13), new THREE.MeshBasicMaterial({ map: stripeMat().map }));
+    edge.rotation.set(-Math.PI / 2, 0, 0);
+    edge.position.set(rx - L / 2 + 1.5, cy + rise + 0.13, zc);
     vMesh(v, edge);
   };
   const vBoost = (v, bx, bz) => {
@@ -1080,12 +1083,15 @@ function addCurbs(scene, hx, hz, r, width) {
 
 function addTrees(ctx, scene, hx, hz, LC) {
   const spots = [];
+  const CLEAR = CONF.TRACK.W / 2 + 22; // säkert avstånd från banans mittlinje till träd
   for (let x = -6600; x <= 6600; x += 85) {
-    spots.push([x + hash(x) * 30, hz + 42 + hash(x + 1) * 30]);
-    spots.push([x + hash(x + 2) * 30, -(hz + 42 + hash(x + 3) * 30)]);
+    // söder om södra rakan (följer svängen) och norr om norra rakan
+    spots.push([x + hash(x) * 30, trackZ(x) + CLEAR + hash(x + 1) * 30]);
+    spots.push([x + hash(x + 2) * 30, -(hz + CLEAR + hash(x + 3) * 30)]);
   }
+  // infältet mellan rakorna (norra rakan −150, södra ~+150): håll dig i mitten
   for (let x = -6200; x <= 5900; x += 240) {
-    spots.push([x + hash(x + 4) * 60, -60 + hash(x + 5) * 120]);
+    spots.push([x + hash(x + 4) * 60, -70 + hash(x + 5) * 90]);
   }
   for (let i = 0; i < 14; i++) {
     const a = hash(i + 9) * Math.PI * 2;

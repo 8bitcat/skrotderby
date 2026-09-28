@@ -1,5 +1,5 @@
 // HUD + startmeny (DOM ovanpå canvasen)
-import { CARS, CONF, BANOR } from './config.js?v=20';
+import { CARS, CONF, BANOR } from './config.js?v=21';
 
 const $ = (id) => document.getElementById(id);
 
@@ -149,6 +149,53 @@ export class Hud {
       html += `<i class="pmark${r.me ? ' me' : ''}" style="left:${pct}%;background:${hex}"></i>`;
     }
     el.innerHTML = html;
+  }
+
+  wallet(kr) {
+    const el = document.getElementById('wallet');
+    if (!el) return;
+    el.style.display = 'block';
+    const v = Math.round(kr);
+    if (this._kr !== v) { this._kr = v; el.innerHTML = '💰 <b>' + v.toLocaleString('sv-SE') + ' kr</b>'; }
+  }
+
+  results(rows, secLeft) {
+    const el = document.getElementById('results');
+    if (!el) return;
+    if (!rows) { el.style.display = 'none'; this._resBuilt = false; return; }
+    el.style.display = 'block';
+    if (this._resBuilt !== rows) {
+      this._resBuilt = rows;
+      let html = '<div class="rtitle">🏁 SLUTRESULTAT</div><div class="rlist">';
+      rows.slice(0, 10).forEach((r) => {
+        const medal = r.place === 1 ? '🥇' : r.place === 2 ? '🥈' : r.place === 3 ? '🥉' : r.place;
+        html += `<div class="rrow${r.me ? ' me' : ''}"><b>${medal}</b><span>${r.name}</span><i>${r.prize ? '+' + r.prize + ' kr' : ''}</i></div>`;
+      });
+      html += '</div><div class="rfoot" id="rfoot"></div>';
+      el.innerHTML = html;
+    }
+    const f = document.getElementById('rfoot');
+    if (f) f.textContent = 'Nästa start om ' + Math.max(0, Math.ceil(secLeft)) + ' s';
+  }
+
+  shop(open, money, owned, items, onBuy) {
+    const el = document.getElementById('shop');
+    if (!el) return;
+    if (!open) { el.style.display = 'none'; this._shopKey = null; return; }
+    el.style.display = 'block';
+    const key = money + '|' + owned.join(',');
+    if (this._shopKey === key) return;
+    this._shopKey = key;
+    let html = `<div class="shead">🔧 SPRUTBUTIK <span>💰 ${Math.round(money).toLocaleString('sv-SE')} kr</span><button id="shopclose">✕</button></div><div class="sgrid">`;
+    for (const it of items) {
+      const has = owned.includes(it.id);
+      const afford = money >= it.pris;
+      html += `<div class="scard${has ? ' owned' : afford ? '' : ' broke'}"><b>${it.namn}</b><p>${it.besk}</p><button class="sbuy" data-id="${it.id}" ${has ? 'disabled' : ''}>${has ? 'MONTERAD ✓' : it.pris + ' kr'}</button></div>`;
+    }
+    html += '</div><p class="sfoot">Tryck B för att stänga · monteras direkt på din bil</p>';
+    el.innerHTML = html;
+    el.querySelector('#shopclose').addEventListener('click', () => onBuy(null));
+    el.querySelectorAll('.sbuy').forEach(b => b.addEventListener('click', () => { if (!b.disabled) onBuy(b.dataset.id); }));
   }
 
   // Banröstning innan varje start (7/8/9 eller klick)

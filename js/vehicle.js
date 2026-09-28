@@ -1,9 +1,10 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=20';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=20';
-import { pathPointAt } from './world.js?v=20';
+import { CONF, SHOP } from './config.js?v=21';
+const CONF_SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=21';
+import { pathPointAt } from './world.js?v=21';
 
 // ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
 export function spotFree(cars, x, z, r = 5.5, except = null) {
@@ -59,8 +60,15 @@ export class Car {
     this.owner = opts.owner ?? null;        // null=bot, 'local'=värdens spelare, annars nät-id
     this.isPlayer = this.owner === 'local';
     this.name = opts.name || def.namn;
+    this.equip = opts.equip || [];
+    this.fx = { launch: 1, dmg: 1, grip: 1, health: 1, frontArmor: 0 };
+    for (const id of this.equip) {
+      const it = CONF_SHOP_BY_ID[id];
+      if (it && it.fx) for (const k in it.fx) this.fx[k] = (k === 'frontArmor') ? it.fx[k] : this.fx[k] * it.fx[k];
+    }
 
     this.health = def.health * CONF.HALSA_MULT; this.maxHealth = this.health;
+    this.maxHealth *= this.fx.health; this.health = this.maxHealth;
     this.wrecked = false; this.deadT = 0; this.exploded = false; this.respawnAfter = 4;
     this.speedMult = 1; this.turboT = 0; this.flipT = 0; this.dmgCooldown = 0;
     this.score = 0; this.racing = null; this.raceCooldown = 0; this.disposed = false;
@@ -116,7 +124,7 @@ export class Car {
   }
 
   _buildVisual() {
-    const built = buildCarVisual(this.def);
+    const built = buildCarVisual(this.def, this.equip);
     this.group = built.group;
     this.parts = built.parts;
     this.bodyMeshes = built.bodyMeshes;
@@ -226,14 +234,15 @@ export class Car {
       let longImp = 0;
       if (drive && w.powered) longImp += (drive / nPow) * dt;
       if (brake) longImp += -Math.sign(vF2) * Math.min((brake / 4) * dt, Math.abs(vF2) * def.mass / 4);
-      const capL = def.grip * 1.15 * F * dt * 1.4 * (w.broken ? 0.6 : 1);
+      const grip = def.grip * this.fx.grip;
+      const capL = grip * 1.15 * F * dt * 1.4 * (w.broken ? 0.6 : 1);
       longImp = Math.max(-capL, Math.min(capL, longImp));
 
       // Lösare bakvagn → bilen driftar istället för att bita fast och välta
       const isRear = w.anchorL.z > 0;
       // Bakvagnen greppar lite MER än fronten ⇒ stabil bil som svänger dit man styr;
       // vill man sladda drar man handbromsen
-      let muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 1.1 : 1.0);
+      let muS = (this.input.handbrake && isRear) ? grip * 0.3 : grip * (isRear ? 1.1 : 1.0);
       if (this.sidePress) muS *= 0.48; // jämsides: man KAN pushas i sidled och snurras
       if (w.broken) muS *= 0.55;       // trasigt framhjul: bilen drar åt det hållet
       let latImp = -vS * def.mass / 4;
@@ -489,6 +498,12 @@ export class Car {
   brokenMask() {
     let m = 0;
     this.wheels.forEach((w, i) => { if (w.broken) m |= (1 << i); });
+    return m;
+  }
+
+  equipMask() {
+    let m = 0;
+    SHOP.forEach((it, i) => { if (this.equip.includes(it.id)) m |= (1 << i); });
     return m;
   }
 

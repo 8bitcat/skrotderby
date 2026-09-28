@@ -1,13 +1,13 @@
 // Uppstart: meny → värd (äger fysiken, öppnar rum) eller gäst (ansluter med kod).
-import { createScene, ChaseCam } from './scene.js?v=20';
-import { Particles } from './particles.js?v=20';
-import { AudioFx } from './audio.js?v=20';
-import { Input } from './input.js?v=20';
-import { Hud } from './hud.js?v=20';
-import { HostGame } from './hostgame.js?v=20';
-import { ClientGame } from './clientgame.js?v=20';
-import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=20';
-import { loadModels } from './models.js?v=20';
+import { createScene, ChaseCam } from './scene.js?v=21';
+import { Particles } from './particles.js?v=21';
+import { AudioFx } from './audio.js?v=21';
+import { Input } from './input.js?v=21';
+import { Hud } from './hud.js?v=21';
+import { HostGame } from './hostgame.js?v=21';
+import { ClientGame } from './clientgame.js?v=21';
+import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=21';
+import { loadModels } from './models.js?v=21';
 
 const hud = new Hud();
 hud.buildMenu();
@@ -99,7 +99,7 @@ async function startClient() {
 // Publik server: alla som öppnar sidan hamnar i samma värld.
 // Finns ingen värd blir du värd; annars ansluter du som gäst.
 // Rummet roteras per version så gamla flikar inte kan blockera nya spelare.
-import { PROTO } from './config.js?v=20';
+import { PROTO } from './config.js?v=21';
 const PUBLIC_CODE = 'PUB' + PROTO;
 
 async function startPublic() {

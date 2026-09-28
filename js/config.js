@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 20;
+export const PROTO = 21;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -160,7 +160,31 @@ export const CARS = [
 // Banvarianter det röstas om — allt efter grindarna byts, spawn-arean består
 export const BANOR = ['KLASSIKERN', 'TRAFIKKAOS', 'RAMPFESTEN'];
 
+// Prispengar per placering i mål + bonus per skrotpoäng
+export const PRIZE = [800, 550, 400, 300, 220, 160, 120, 90];
+export const PRIZE_BASE = 40;      // alla som kör i mål
+export const SKROT_KR = 6;         // kr per skrotpoäng i racet
+export const START_KR = 300;       // startkassa
+
+// Sprutbutik: saker att montera på bilen. fx = spelpåverkan.
+export const SHOP = [
+  { id: 'wedge',    namn: 'Kilplog fram', pris: 900, besk: 'Sluttande plog längst fram — skickar bilar i luften när du rammar.', fx: { launch: 1.7 } },
+  { id: 'spikes',   namn: 'Sidopiggar',   pris: 650, besk: 'Vassa piggar på sidorna — mer skada när du tacklar.', fx: { dmg: 1.4 } },
+  { id: 'bullbar',  namn: 'Frontbåge',    pris: 500, besk: 'Kraftig stötbåge — tål frontalkrockar bättre.', fx: { frontArmor: 1 } },
+  { id: 'rollcage', namn: 'Störtbur',     pris: 700, besk: 'Rejäl bur — bilen tål 40 % mer.', fx: { health: 1.4 } },
+  { id: 'bigwing',  namn: 'Stor vinge',   pris: 450, besk: 'Enorm bakvinge — bättre grepp i hög fart.', fx: { grip: 1.15 } },
+  { id: 'rooflight', namn: 'Taklyktor',   pris: 250, besk: 'Rad av strålkastare på taket. Ren stil.', fx: {} },
+  { id: 'flames',   namn: 'Flammlack',    pris: 350, besk: 'Eldslågor på huven. Rider inte snabbare, men ser tufft ut.', fx: {} },
+];
+
 export const BOT_NAMES = ['Bosse', 'Yngve', 'Ragnar', 'Siv', 'Kjell', 'Maud', 'Örjan', 'Gittan', 'Roffe', 'Berit', 'Sune', 'Doris'];
 
 // Tyngre bilar: massa och motorkraft skalas lika så accelerationen behålls
 for (const d of CARS) { d.mass *= CONF.VIKT_MULT; d.power *= CONF.VIKT_MULT; }
+
+// Gör butik/priser nåbara både som CONF.X och som egna exporter
+CONF.SHOP = SHOP;
+CONF.PRIZE = PRIZE;
+CONF.PRIZE_BASE = PRIZE_BASE;
+CONF.SKROT_KR = SKROT_KR;
+CONF.START_KR = START_KR;

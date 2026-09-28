@@ -2,9 +2,9 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=20';
-import { stepGates, pathPointAt } from './world.js?v=20';
-import { spotFree } from './vehicle.js?v=20';
+import { CONF } from './config.js?v=21';
+import { stepGates, pathPointAt } from './world.js?v=21';
+import { spotFree } from './vehicle.js?v=21';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -286,6 +286,13 @@ export class RaceManager {
       .sort((a, b) => b[1].travel - a[1].travel)
       .map(([c]) => c);
     const order = [...r.finishOrder, ...rest].filter(c => !c.wrecked && !c.disposed);
+    // Slutresultat + prispengar (mål-ordning, sedan sträcka)
+    const finalOrder = [...r.finishOrder, ...[...r.parts.entries()]
+      .filter(([c]) => !done.has(c)).sort((a, b) => b[1].travel - a[1].travel).map(([c]) => c)];
+    this.ctx.raceResults?.(finalOrder.map((car, i) => ({
+      id: car.id, name: car.name, place: i + 1, owner: car.owner,
+      prize: (CONF.PRIZE[i] || CONF.PRIZE_BASE) + Math.round((car.score || 0) * CONF.SKROT_KR), car,
+    })));
     z.gridClaims.clear();
     order.slice(0, z.grid.length).forEach((car, i) => {
       const g = z.grid[i];

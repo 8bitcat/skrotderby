@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=20';
-import { buildWorld, stepGates } from './world.js?v=20';
-import { CarView } from './carview.js?v=20';
-import { Hud } from './hud.js?v=20';
+import { CONF, CARS, PROTO, SHOP } from './config.js?v=21';
+import { buildWorld, stepGates } from './world.js?v=21';
+import { CarView, equipFromMask } from './carview.js?v=21';
+import { Hud } from './hud.js?v=21';
 
 const _v = new THREE.Vector3();
 
@@ -42,14 +42,14 @@ export class ClientGame {
     this._hejT = 9; // vakthund: får vi inget välkommen är värden trasig/gammal
   }
 
-  ensureView(id, defId, name, replace = false) {
+  ensureView(id, defId, name, replace = false, equip = []) {
     const old = this.views.get(id);
     if (old) {
       if (!replace) return old;
       old.dispose();
       this.views.delete(id);
     }
-    const v = new CarView(this.app.scene, id, defId, name, id === this.myId);
+    const v = new CarView(this.app.scene, id, defId, name, id === this.myId, equip);
     this.views.set(id, v);
     return v;
   }
@@ -87,15 +87,17 @@ export class ClientGame {
       }
       case 'valkommen': {
         this._hejT = 0;
+        this.money = msg.money ?? CONF.START_KR;
+        this.loadout = [];
         this.myId = msg.dinBil;
-        for (const c of msg.cars) this.ensureView(c.id, c.defId, c.name);
+        for (const c of msg.cars) this.ensureView(c.id, c.defId, c.name, false, equipFromMask(c.equip || 0));
         // egen vy kan ha skapats innan vi visste vårt id — bygg om utan namnskylt
         const me = this.views.get(this.myId);
         if (me?.label) this.ensureView(this.myId, me.defId, me.name, true);
         break;
       }
       case 'spawn':
-        this.ensureView(msg.id, msg.defId, msg.name, true);
+        this.ensureView(msg.id, msg.defId, msg.name, true, equipFromMask(msg.equip || 0));
         break;
       case 'despawn':
         this.removeView(msg.id);
@@ -148,6 +150,14 @@ export class ClientGame {
         }
         break;
       }
+      case 'wallet':
+        this.money = msg.money ?? this.money;
+        if (msg.gear) this.loadout = msg.gear;
+        break;
+      case 'results':
+        this._results = msg.rows.map(r => ({ name: r.name, place: r.place, prize: r.prize, me: r.id === this.myId }));
+        this._resultsT = msg.t2 || 12;
+        break;
       case 'votestat':
         this.voteCounts = msg.counts || [0, 0, 0];
         break;
@@ -263,6 +273,7 @@ export class ClientGame {
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
     if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');
+    if (input.take('KeyB')) { this._shopOpen = !this._shopOpen; if (!this._shopOpen) hud.shop(false); }
     for (let i = 0; i < CONF.VALBARA; i++) {
       if (input.take('Digit' + (i + 1))) this.net.send({ t: 'byt', defId: i });
     }
@@ -336,6 +347,12 @@ export class ClientGame {
       hud.board(null);
       hud.progress(null);
     }
-    hud.votePanel(!(this.zr[0] & 1) && this.tLeft <= 30, this.voteCounts || [0, 0, 0], this.myVote);
+    hud.wallet(this.money ?? CONF.START_KR);
+    if (this._resultsT > 0) { this._resultsT -= dt; hud.results(this._results, this._resultsT); if (this._resultsT <= 0) hud.results(null); }
+    if (this._shopOpen) hud.shop(true, this.money ?? CONF.START_KR, this.loadout || [], SHOP, (id) => {
+      if (id === null) { this._shopOpen = false; hud.shop(false); return; }
+      this.net.send({ t: 'buy', id });
+    });
+    hud.votePanel(!(this.zr[0] & 1) && this.tLeft <= 30 && !(this._resultsT > 0), this.voteCounts || [0, 0, 0], this.myVote);
   }
 }

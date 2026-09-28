@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=20';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=20';
-import { buildWorld, pathPointAt } from './world.js?v=20';
-import { RaceManager, nearestParam } from './race.js?v=20';
-import { Bots } from './ai.js?v=20';
-import { Traffic } from './traffic.js?v=20';
-import { Hud } from './hud.js?v=20';
+import { CONF, CARS, PROTO } from './config.js?v=21';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=21';
+import { buildWorld, pathPointAt } from './world.js?v=21';
+import { RaceManager, nearestParam } from './race.js?v=21';
+import { Bots } from './ai.js?v=21';
+import { Traffic } from './traffic.js?v=21';
+import { Hud } from './hud.js?v=21';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -74,6 +74,7 @@ export class HostGame {
       applyVariant: () => this.applyVotedVariant(),
       restaged: (car, z, i) => this.bots.restage(car, z, i),
       refreshBot: (car) => this.bots.refresh(car),
+      raceResults: (results) => this.onRaceResults(results),
     };
     this.raceMgr = new RaceManager(rmCtx, this.worldApi.zones);
     this.ctx.raceMgr = this.raceMgr;
@@ -86,6 +87,9 @@ export class HostGame {
     this._voteCounts = [0, 0, 0];
     this.app.hud.onVote = (i) => this.castVote('local', i);
 
+    // Plånbok + monterade tillbehör (sparas lokalt mellan sessioner)
+    this.money = this._loadMoney();
+    this.loadout = this._loadLoadout();
     this.player = this.spawnFor('local', name, defId, 0);
     this.playerPadT = 0;
     this.remotePlayers = new Map();
@@ -98,18 +102,29 @@ export class HostGame {
     app.cam.snap(this.player.pos);
   }
 
+  _equipFor(owner) {
+    if (owner === 'local') return this.loadout;
+    const rp = this.remotePlayers.get(owner);
+    return rp ? rp.loadout : [];
+  }
+
+  _loadMoney() { try { return Math.max(0, +localStorage.getItem('skrotderby_kr') || CONF.START_KR); } catch { return CONF.START_KR; } }
+  _saveMoney() { try { localStorage.setItem('skrotderby_kr', String(Math.round(this.money))); } catch { /* ok */ } }
+  _loadLoadout() { try { return JSON.parse(localStorage.getItem('skrotderby_gear') || '[]'); } catch { return []; } }
+  _saveLoadout() { try { localStorage.setItem('skrotderby_gear', JSON.stringify(this.loadout)); } catch { /* ok */ } }
+
   spawnFor(owner, name, defId, spawnIdx, id) {
     const def = CARS[defId] ?? CARS[0];
     const sp = freeLobbySpawn(this.worldApi.lobby, this.ctx.allCars, spawnIdx);
     const pos = sp.pos.clone();
     pos.y = spawnY(def);
-    const car = new Car(this.ctx, def, pos, sp.heading, { owner, name, defId, id });
+    const car = new Car(this.ctx, def, pos, sp.heading, { owner, name, defId, id, equip: this._equipFor(owner) });
     this.broadcastSpawn(car);
     return car;
   }
 
   broadcastSpawn(car) {
-    this.net?.broadcast({ t: 'spawn', id: car.id, defId: car.defId, name: car.name });
+    this.net?.broadcast({ t: 'spawn', id: car.id, defId: car.defId, name: car.name, equip: car.equipMask() });
   }
 
   swapCar(car, defId) {
@@ -119,17 +134,17 @@ export class HostGame {
     car.dispose();
     const def = CARS[defId];
     pos.y = spawnY(def) + 0.2;
-    const nc = new Car(this.ctx, def, pos, heading, { id, owner, name, defId });
+    const nc = new Car(this.ctx, def, pos, heading, { id, owner, name, defId, equip: this._equipFor(owner) });
     this.broadcastSpawn(nc);
     return nc;
   }
 
-  trySwap(car, defId) {
+  trySwap(car, defId, force = false) {
     if (car.wrecked || car.disposed || defId < 0 || defId >= CONF.VALBARA) return car;
     if (car.racing) { this.notify(car, 'toast', 'Du kan inte byta bil mitt i ett lopp'); return car; }
-    if (car.defId === defId) return car;
+    if (car.defId === defId && !force) return car;
     const nc = this.swapCar(car, defId);
-    this.notify(nc, 'toast', 'Ny bil: ' + nc.def.namn);
+    if (!force) this.notify(nc, 'toast', 'Ny bil: ' + nc.def.namn);
     this.ctx.particles.sparks(nc.pos, 25, 0x8ecfff, 8);
     if (nc.owner === 'local') this.player = nc;
     else if (nc.owner) {
@@ -152,6 +167,34 @@ export class HostGame {
     }
     list.sort((a, b) => a.dist - b.dist);
     return list.slice(0, 3);
+  }
+
+  // Butik: köp och montera
+  _buy(id) {
+    if (id === null) { this._shopOpen = false; this.app.hud.shop(false); return; }
+    const it = CONF.SHOP.find(s => s.id === id);
+    if (!it || this.loadout.includes(id) || this.money < it.pris) return;
+    this.money -= it.pris;
+    this.loadout.push(id);
+    this._saveMoney(); this._saveLoadout();
+    this.app.hud.toast('Monterade ' + it.namn + '!');
+    // Bygg om spelarens bil med tillbehöret
+    if (!this.player.racing) this.player = this.trySwap(this.player, this.player.defId, true);
+  }
+
+  onRaceResults(results) {
+    // Prispengar till spelare
+    for (const r of results) {
+      if (r.owner === 'local') { this.money += r.prize; this._saveMoney(); }
+      else if (r.owner) {
+        const rp = this.remotePlayers.get(r.owner);
+        if (rp) { rp.money = (rp.money || CONF.START_KR) + r.prize; this.net?.sendTo(r.owner, { t: 'wallet', money: rp.money }); }
+      }
+    }
+    const rows = results.map(r => ({ name: r.name, place: r.place, prize: r.owner ? r.prize : 0, me: r.car === this.player }));
+    this._results = rows;
+    this._resultsT = CONF.RESTAGE_WAIT + 2;
+    this.net?.broadcast({ t: 'results', rows: results.map(r => ({ name: r.name, place: r.place, prize: r.prize, id: r.id })), t2: this._resultsT });
   }
 
   _detachFx(car, part, pos) {
@@ -200,10 +243,10 @@ export class HostGame {
         const defId = clamp(msg.defId | 0, 0, CONF.VALBARA - 1);
         const name = String(msg.name || 'Gäst').slice(0, 12);
         const car = this.spawnFor(id, name, defId, 4 + this.remotePlayers.size);
-        this.remotePlayers.set(id, { car, padT: 0 });
+        this.remotePlayers.set(id, { car, padT: 0, money: CONF.START_KR, loadout: [] });
         this.net.sendTo(id, {
-          t: 'valkommen', dinBil: car.id,
-          cars: this.ctx.allCars.map(c => ({ id: c.id, defId: c.defId, name: c.name })),
+          t: 'valkommen', dinBil: car.id, money: CONF.START_KR,
+          cars: this.ctx.allCars.map(c => ({ id: c.id, defId: c.defId, name: c.name, equip: c.equipMask() })),
         });
         this.notifyAll('toast', '🚗 ' + name + ' gick med!');
         break;
@@ -231,6 +274,17 @@ export class HostGame {
       case 'byt': {
         const rp = this.remotePlayers.get(id);
         if (rp) this.trySwap(rp.car, msg.defId | 0);
+        break;
+      }
+      case 'buy': {
+        const rp = this.remotePlayers.get(id);
+        const it = CONF.SHOP.find(s => s.id === msg.id);
+        if (rp && it && !rp.loadout.includes(it.id) && rp.money >= it.pris) {
+          rp.money -= it.pris;
+          rp.loadout.push(it.id);
+          if (!rp.car.racing) rp.car = this.swapCar(rp.car, rp.car.defId);
+          this.net.sendTo(id, { t: 'wallet', money: rp.money, gear: rp.loadout });
+        }
         break;
       }
       case 'rosta': {
@@ -422,7 +476,10 @@ export class HostGame {
       if (!attacker && Math.abs(dvy) > 0.72 * dv) continue; // landning
 
       // Tacklingar bil-mot-bil ska slå ut folk — väggar straffar lite mildare
-      const mult = attacker ? CONF.DMG_CAR_MULT : CONF.DMG_WALL_MULT;
+      let mult = attacker ? CONF.DMG_CAR_MULT : CONF.DMG_WALL_MULT;
+      if (attacker) mult *= attacker.fx.dmg;              // sidopiggar
+      // Frontbåge: mindre skada när träffen kommer framifrån
+      if (car.fx.frontArmor && (dvx * car.fwd.x + dvz * car.fwd.z) > 0.4 * dv) mult *= 0.5;
       const dmg = Math.min(CONF.DMG_MAX, (dv - CONF.DV_MIN) * CONF.DV_SCALE * mult);
       if (dmg <= 0.5) continue;
       // Träffpunkt: på sidan knuffen kom ifrån
@@ -447,8 +504,13 @@ export class HostGame {
         this.app.audio.crash(Math.min(1, applied / 22) * Math.max(0.15, 1 - d / 120), pan);
         this.net?.broadcast({ t: 'dmg', x: r1(point.x), y: r1(point.y), z: r1(point.z), i: Math.round(applied) });
         // Riktigt hård tackling → offret lättar från marken
-        if (attacker && dv > 9) {
-          car.body.applyImpulse({ x: 0, y: car.def.mass * CONF.LAUNCH_JUICE, z: 0 }, true);
+        // Kilplog: träffar tacklaren framifrån ⇒ offret slungas rejält i luften
+        const wedge = attacker && attacker.fx.launch > 1 &&
+          ((car.pos.x - attacker.pos.x) * attacker.fwd.x + (car.pos.z - attacker.pos.z) * attacker.fwd.z) > 0;
+        if (attacker && (dv > 9 || wedge)) {
+          const j = CONF.LAUNCH_JUICE * (wedge ? attacker.fx.launch : 1);
+          car.body.applyImpulse({ x: 0, y: car.def.mass * j, z: 0 }, true);
+          if (wedge) car.body.applyTorqueImpulse({ x: (Math.random() - 0.5) * car.def.mass * 2, y: 0, z: (Math.random() - 0.5) * car.def.mass * 2 }, true);
         }
       }
     }
@@ -530,7 +592,7 @@ export class HostGame {
         // Lätt att komma tillbaka: ny bil 80 m bakåt PÅ banan, kvar i loppet
         const f = freeTrackSpot(rd.zone, Math.max(0, rd.param), this.ctx.allCars);
         nc = new Car(this.ctx, CARS[defId], new THREE.Vector3(f.x, spawnY(CARS[defId]), f.z),
-          f.heading, { id, owner, name, defId });
+          f.heading, { id, owner, name, defId, equip: this._equipFor(owner) });
         this.broadcastSpawn(nc);
         this.raceMgr.enroll(rd.zone, nc, false, Math.max(0, rd.travel + f.dp));
         this.notify(nc, 'announce', '🔧 NY BIL — JAGA IKAPP!');
@@ -614,6 +676,10 @@ export class HostGame {
     if (input.take('KeyC')) cam.toggle();
     if (input.take('KeyM')) hud.toast(audio.toggleMute() ? 'Ljud av 🔇' : 'Ljud på 🔊');
     if (input.take('KeyN')) hud.toast(audio.toggleMusic() ? 'Musik på 🎵' : 'Musik av');
+    if (input.take('KeyB') && !this.player.racing) {
+      this._shopOpen = !this._shopOpen;
+      if (!this._shopOpen) hud.shop(false);
+    }
     for (let i = 0; i < CONF.VALBARA; i++) {
       if (input.take('Digit' + (i + 1))) this.trySwap(this.player, i);
     }
@@ -705,7 +771,18 @@ export class HostGame {
       hud.board(null);
       hud.progress(null);
     }
-    hud.votePanel(!rz.race && this.raceMgr.tLeft <= 30, this._voteCounts, this.votes.get('local'));
+    hud.votePanel(!rz.race && this.raceMgr.tLeft <= 30 && !(this._resultsT > 0), this._voteCounts, this.votes.get('local'));
+
+    // Plånbok, slutresultat och butik
+    hud.wallet(this.money);
+    if (this._resultsT > 0) {
+      this._resultsT -= dt;
+      hud.results(this._results, this._resultsT);
+      if (this._resultsT <= 0) hud.results(null);
+    }
+    if (this._shopOpen) {
+      hud.shop(true, this.money, this.loadout, CONF.SHOP, (id) => this._buy(id));
+    }
 
     if (this.net) {
       this.snapT += dt;
