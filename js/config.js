@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 15;
+export const PROTO = 16;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -70,7 +70,7 @@ export const CARS = [
     dims: { l: 4.4, w: 1.75, h: 1.3 }, mass: 900,
     model: { fil: 'derbycar.glb', lack: ['Material_1404'], orig: true, fram: '-x' },
     power: 8600, maxKmh: 195, grip: 2.5, steerMax: 0.60, drive: 'awd',
-    motor: 'i4', motorPitch: 1.12, health: 95, wheelR: 0.37, wheelW: 0.3, spoiler: false,
+    motor: 'rally', motorPitch: 1.05, health: 95, wheelR: 0.37, wheelW: 0.3, spoiler: false,
     stats: { fart: 3, accel: 4, grepp: 5, pansar: 3 },
   },
   {
@@ -100,7 +100,7 @@ export const CARS = [
     dims: { l: 4.8, w: 2.1, h: 1.7 }, mass: 1500,
     model: { fil: 'pickup78.glb', lack: ['Bodycolour'], orig: true },
     power: 11800, maxKmh: 175, grip: 1.9, steerMax: 0.50, drive: 'awd',
-    motor: 'v8', motorPitch: 0.84, health: 150, wheelR: 0.5, wheelW: 0.38, spoiler: false,
+    motor: 'v8b', motorPitch: 0.92, health: 150, wheelR: 0.5, wheelW: 0.38, spoiler: false,
     stats: { fart: 2, accel: 3, grepp: 3, pansar: 5 },
   },
   {
@@ -120,7 +120,7 @@ export const CARS = [
     dims: { l: 5.0, w: 1.8, h: 1.1 }, mass: 620,
     model: { fil: 'sedan80s.glb', lack: ['Bodycolor'], orig: true },
     power: 7900, maxKmh: 205, grip: 2.6, steerMax: 0.65, drive: 'awd',
-    motor: 'i4', motorPitch: 1.28, health: 60, wheelR: 0.45, wheelW: 0.36, spoiler: false,
+    motor: 'i4', motorPitch: 1.12, health: 60, wheelR: 0.45, wheelW: 0.36, spoiler: false,
     stats: { fart: 3, accel: 5, grepp: 5, pansar: 1 },
   },
   // --- Civiltrafik (går ej att välja — VALBARA stoppar) ---

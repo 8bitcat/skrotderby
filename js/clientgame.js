@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=15';
-import { buildWorld, stepGates } from './world.js?v=15';
-import { CarView } from './carview.js?v=15';
-import { Hud } from './hud.js?v=15';
+import { CONF, CARS, PROTO } from './config.js?v=16';
+import { buildWorld, stepGates } from './world.js?v=16';
+import { CarView } from './carview.js?v=16';
+import { Hud } from './hud.js?v=16';
 
 const _v = new THREE.Vector3();
 
@@ -60,6 +60,22 @@ export class ClientGame {
   }
 
   myView() { return this.views.get(this.myId); }
+
+  _nearEngines(me) {
+    const cm = this.app.camera.matrixWorld.elements;
+    const list = [];
+    for (const v of this.views.values()) {
+      if (v === me || !v.group.visible || v.wrecked) continue;
+      const dx = v.pos.x - me.pos.x, dz = v.pos.z - me.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 70) continue;
+      const def = CARS[v.defId];
+      list.push({ id: v.id, motor: def?.motor, pitch: def?.motorPitch || 1, kmh: v.kmh, dist: d,
+        pan: d > 0.5 ? (dx * cm[0] + dz * cm[2]) / d : 0 });
+    }
+    list.sort((a, b) => a.dist - b.dist);
+    return list.slice(0, 3);
+  }
 
   onData(msg) {
     if (!msg || typeof msg !== 'object') return;
@@ -286,6 +302,7 @@ export class ClientGame {
         pitch: CARS[me.defId]?.motorPitch || 1,
         slip: Math.abs(me.steer) * (me.kmh / 3.6) * 0.35 + (inp.handbrake ? me.kmh / 12 : 0),
         scrape: false, grounded: true,
+        others: this._nearEngines(me),
       });
       if (me.kmh < 4 && inp.throttle > 0.5 && !me.wrecked && (this._launchCd ?? 0) <= 0) {
         audio.launch(CARS[me.defId]?.motor, CARS[me.defId]?.motorPitch || 1);

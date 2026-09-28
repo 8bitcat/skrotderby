@@ -31,3 +31,7 @@ TEXTURER (textures/) — Poly Haven, CC0: aerial_grass_rock, asphalt_02,
 
 PROPS (models/Barrel_01.glb, barrel_03.glb, old_tyre.glb, wild_rooibos_bush.glb)
   Poly Haven, CC0 — https://polyhaven.com/models (texturer omkodade till WebP 512 px)
+
+LJUD (audio/*.ogg) — riktiga inspelningar från Freesound, alla CC0 1.0.
+  Upphovspersoner och käll-URL per fil finns i audio/manifest.json ("credits").
+  Bearbetade: klippta loopsegment, mono 44,1 kHz, OGG Vorbis, loudness-normaliserade.

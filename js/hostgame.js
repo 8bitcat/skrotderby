@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=15';
-import { Car, spawnY } from './vehicle.js?v=15';
-import { buildWorld, pathPointAt } from './world.js?v=15';
-import { RaceManager, nearestParam } from './race.js?v=15';
-import { Bots } from './ai.js?v=15';
-import { Traffic } from './traffic.js?v=15';
-import { Hud } from './hud.js?v=15';
+import { CONF, CARS, PROTO } from './config.js?v=16';
+import { Car, spawnY } from './vehicle.js?v=16';
+import { buildWorld, pathPointAt } from './world.js?v=16';
+import { RaceManager, nearestParam } from './race.js?v=16';
+import { Bots } from './ai.js?v=16';
+import { Traffic } from './traffic.js?v=16';
+import { Hud } from './hud.js?v=16';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -131,6 +131,21 @@ export class HostGame {
       if (rp) rp.car = nc;
     }
     return nc;
+  }
+
+  // De 3 närmaste andra bilarnas motorer (hörs i stereo i klungan)
+  _nearEngines(p) {
+    const list = [];
+    for (const c of this.ctx.allCars) {
+      if (c === p || c.disposed || c.wrecked) continue;
+      const dx = c.pos.x - p.pos.x, dz = c.pos.z - p.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 70) continue;
+      list.push({ id: c.id, motor: c.def.motor, pitch: c.def.motorPitch || 1, kmh: c.absSpeed * 3.6, dist: d,
+        pan: d > 0.5 ? (dx * this.app.camera.matrixWorld.elements[0] + dz * this.app.camera.matrixWorld.elements[2]) / d : 0 });
+    }
+    list.sort((a, b) => a.dist - b.dist);
+    return list.slice(0, 3);
   }
 
   _detachFx(car, part, pos) {
@@ -382,8 +397,11 @@ export class HostGame {
       const applied = car.applyDamage(dmg, point, attacker);
       if (applied > 0) {
         this.ctx.particles.sparks(point, Math.round(4 + applied), 0xffb347, 7 + applied * 0.3);
-        const d = Math.hypot(point.x - this.player.pos.x, point.z - this.player.pos.z);
-        this.app.audio.crash(Math.min(1, applied / 22) * Math.max(0.15, 1 - d / 120));
+        const dx = point.x - this.player.pos.x, dz = point.z - this.player.pos.z;
+        const d = Math.hypot(dx, dz);
+        const cm = this.app.camera.matrixWorld.elements;
+        const pan = d > 1 ? (dx * cm[0] + dz * cm[2]) / d : 0;
+        this.app.audio.crash(Math.min(1, applied / 22) * Math.max(0.15, 1 - d / 120), pan);
         this.net?.broadcast({ t: 'dmg', x: r1(point.x), y: r1(point.y), z: r1(point.z), i: Math.round(applied) });
         // Riktigt hård tackling → offret lättar från marken
         if (attacker && dv > 9) {
@@ -614,6 +632,7 @@ export class HostGame {
     audio.drive({
       kmh, throttle: p.wrecked ? 0 : p.input.throttle, motor: p.def.motor, pitch: p.def.motorPitch || 1,
       slip: p.wrecked ? 0 : Math.abs(p.vel.dot(p.right)), scrape: !!p.sidePress, grounded: p.grounded,
+      others: this._nearEngines(p),
     });
     if (kmh < 4 && p.input.throttle > 0.5 && !p.wrecked && (this._launchCd ?? 0) <= 0) {
       audio.launch(p.def.motor, p.def.motorPitch || 1);

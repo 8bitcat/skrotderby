@@ -1,4 +1,4 @@
-import { SampleSfx } from './sfx.js?v=15';
+import { SampleSfx } from './sfx.js?v=16';
 // Procedurellt ljud via WebAudio — motor, krascher, explosioner, signaler
 // + loopande synthwave-musik (ingen musikfil, allt genereras).
 export class AudioFx {
@@ -73,7 +73,8 @@ export class AudioFx {
       this.engGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
       return;
     }
-    this.setEngine(Math.min(1, (st.kmh / 3.6) / 50), st.throttle, st.motor === 'old' || st.motor === 'i4' ? 'standard' : st.motor);
+    const synt = st.motor === 'v8b' ? 'v8' : (st.motor === 'el' || st.motor === 'v8' ? st.motor : 'standard');
+    this.setEngine(Math.min(1, (st.kmh / 3.6) / 50), st.throttle, synt);
   }
 
   partOff(glas) {
@@ -117,7 +118,7 @@ export class AudioFx {
 
   // Startljud när man drar iväg från stillastående
   launch(typ = 'standard', pitch = 1) {
-    if (this.ok && !this.muted && this.sfx?.launch(pitch)) return;
+    if (this.ok && !this.muted && this.sfx?.launch(typ, pitch)) return;
     if (!this.ok || this.muted) return;
     const t = this.ctx.currentTime;
     if (typ === 'el') {
@@ -358,9 +359,9 @@ export class AudioFx {
     src.start(t, Math.random() * 0.4, dur + 0.05);
   }
 
-  crash(intensity) {
+  crash(intensity, pan = 0) {
     if (!this.ok || this.muted) return;
-    if (this.sfx?.crash(intensity)) return;
+    if (this.sfx?.crash(intensity, pan)) return;
     this._burst(intensity * 0.7, 400 + Math.random() * 900, 0.22 + intensity * 0.15);
   }
 
