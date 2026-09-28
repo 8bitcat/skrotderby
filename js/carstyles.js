@@ -4,6 +4,7 @@
 // varje modell bär sitt racenummer. Delas av värdens fysikbilar och gästvyer —
 // parts[]-ORDNINGEN måste vara identisk överallt (nätets bitmask).
 import * as THREE from 'three';
+import { CONF } from './config.js?v=18';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -308,7 +309,7 @@ function buildModelCar(def) {
   const bodyMeshes = [];
   const civil = !!def.civil;
   const rusty = def.style === 'skrot' && !civil;
-  const tough = def.health / 100;
+  const tough = (def.health / 100) * CONF.DEL_MULT;
   const accent = '#' + new THREE.Color(def.accent ?? 0xffffff).getHexString();
   const nr = NUMMER[def.nrIdx ?? 0] ?? 9;
   const lack = new Set(def.model.lack || []);
@@ -442,7 +443,7 @@ export function buildCarVisual(def) {
   const C = def.color;
   const accent = '#' + new THREE.Color(def.accent ?? 0xffffff).getHexString();
   const nr = NUMMER[def.nrIdx ?? 0] ?? 9;
-  const tough = def.health / 100;
+  const tough = (def.health / 100) * CONF.DEL_MULT;
   const skrotPalette = [0x777f86, 0x9b3b2e, 0x4a6a8a, 0x6f7d4a];
   let skrotIdx = 0;
   const panelPaint = () => rusty ? paint(skrotPalette[(skrotIdx++) % skrotPalette.length], true)

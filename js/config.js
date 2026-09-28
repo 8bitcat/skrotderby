@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 17;
+export const PROTO = 18;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -10,7 +10,11 @@ export const CONF = {
   DV_SCALE: 3.5,          // skadepoäng per m/s över tröskeln
   DMG_MAX: 45,            // max skada per smäll
   DMG_COOLDOWN: 0.22,     // s mellan skadetick per bil
-  LAUNCH_JUICE: 2.2,      // tacklingar SKA skicka bilar i luften
+  LAUNCH_JUICE: 1.4,      // tacklingar lyfter — men tyngre bilar flyger inte lika lätt
+  HALSA_MULT: 5,          // bilarna tål 5× så mycket
+  HJUL_MULT: 5,           // hjulen sitter 5× hårdare
+  DEL_MULT: 3,            // plåtdelar 3× (de ska fortfarande kunna lossna i rejäla smällar)
+  VIKT_MULT: 1.5,         // tyngre bilar (motorkraften skalas lika → samma acceleration)
 
   // Lösa delar som flyger av
   LOOSE_LIFE: 9,
@@ -157,3 +161,6 @@ export const CARS = [
 export const BANOR = ['KLASSIKERN', 'TRAFIKKAOS', 'RAMPFESTEN'];
 
 export const BOT_NAMES = ['Bosse', 'Yngve', 'Ragnar', 'Siv', 'Kjell', 'Maud', 'Örjan', 'Gittan', 'Roffe', 'Berit', 'Sune', 'Doris'];
+
+// Tyngre bilar: massa och motorkraft skalas lika så accelerationen behålls
+for (const d of CARS) { d.mass *= CONF.VIKT_MULT; d.power *= CONF.VIKT_MULT; }

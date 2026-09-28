@@ -1,9 +1,9 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=17';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=17';
-import { pathPointAt } from './world.js?v=17';
+import { CONF } from './config.js?v=18';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=18';
+import { pathPointAt } from './world.js?v=18';
 
 // ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
 export function spotFree(cars, x, z, r = 5.5, except = null) {
@@ -60,7 +60,7 @@ export class Car {
     this.isPlayer = this.owner === 'local';
     this.name = opts.name || def.namn;
 
-    this.health = def.health; this.maxHealth = def.health;
+    this.health = def.health * CONF.HALSA_MULT; this.maxHealth = this.health;
     this.wrecked = false; this.deadT = 0; this.exploded = false; this.respawnAfter = 4;
     this.speedMult = 1; this.turboT = 0; this.flipT = 0; this.dmgCooldown = 0;
     this.score = 0; this.racing = null; this.raceCooldown = 0; this.disposed = false;
@@ -94,7 +94,7 @@ export class Car {
     const cd = RAPIER.ColliderDesc.cuboid(w / 2, h / 2, l / 2)
       .setTranslation(0, -h * 0.3, 0)
       .setMass(this.def.mass)
-      .setFriction(0.35).setRestitution(0.45);
+      .setFriction(0.35).setRestitution(0.3);
     this.collider = world.createCollider(cd, this.body);
     this.ctx.carsByCollider.set(this.collider.handle, this);
     this.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
@@ -108,7 +108,7 @@ export class Car {
       return {
         anchorL: new THREE.Vector3(a.x, a.y, a.z), steered: a.steered, powered: a.powered,
         radius: def.wheelR, susRest: def.susRest || 0.42, k, c,
-        health: 30 * (def.health / 100), detached: false, grounded: false,
+        health: 30 * (def.health / 100) * CONF.HJUL_MULT, detached: false, grounded: false,
         load: 0, visLen: (def.susRest || 0.42) + def.wheelR, spin: 0,
         holder: vis.holder, spinMesh: vis.spin,
       };

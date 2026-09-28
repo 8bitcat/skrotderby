@@ -1,9 +1,9 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=17';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=17';
-import { pathPointAt } from './world.js?v=17';
+import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=18';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=18';
+import { pathPointAt } from './world.js?v=18';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -57,11 +57,20 @@ export class Bots {
     const race = zone.race;
     const mid = race && race.t > 2 && zone.mode === 'race';
     // Mitt i race: ledarens position (bottarna sätts runt täten, inte bakom)
-    let lead = null;
+    let lead = null, humanAnchor = false;
     if (mid) {
+      // Ankare = främsta människan (bottar placeras BAKOM spelare, aldrig före),
+      // finns ingen människa i loppet används ettan
       for (const [c, p] of race.parts) {
-        if (p.finished || c.wrecked || c.disposed) continue;
+        if (p.finished || c.wrecked || c.disposed || c.owner === null) continue;
         if (!lead || p.travel > lead.p.travel) lead = { c, p };
+      }
+      humanAnchor = !!lead;
+      if (!lead) {
+        for (const [c, p] of race.parts) {
+          if (p.finished || c.wrecked || c.disposed) continue;
+          if (!lead || p.travel > lead.p.travel) lead = { c, p };
+        }
       }
     }
     // Vid start: lediga rutor i fållan
@@ -80,7 +89,7 @@ export class Bots {
       let travel = null;
       if (zone.mode === 'race' && mid && lead) {
         // från 90 m före ettan och bakåt genom klungan
-        const off = 90 - placed * 22 - Math.random() * 10;
+        const off = (humanAnchor ? -45 : 90) - placed * 22 - Math.random() * 10;
         const f = freeTrackSpot(zone, lead.p.lastParam + off, this.ctx.allCars, car);
         car.resetTo(new THREE.Vector3(f.x, 1.4, f.z), f.heading);
         car.body.setLinvel({ x: -Math.sin(f.heading) * 45, y: 0, z: -Math.cos(f.heading) * 45 }, true); // flygande start

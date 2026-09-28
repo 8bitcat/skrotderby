@@ -2,9 +2,9 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=17';
-import { stepGates, pathPointAt } from './world.js?v=17';
-import { spotFree } from './vehicle.js?v=17';
+import { CONF } from './config.js?v=18';
+import { stepGates, pathPointAt } from './world.js?v=18';
+import { spotFree } from './vehicle.js?v=18';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;
@@ -185,15 +185,18 @@ export class RaceManager {
   // Osynligt gummiband: bottar långt efter täten, som ingen människa ser,
   // lyfts upp bakom tätklungan — så det alltid är en klunga runt 1:an.
   packWarp(z, r, active) {
-    const [leadCar, leadP] = active[0];
+    // Ankare = främsta MÄNNISKAN i loppet (annars ettan): bottar lyfts aldrig
+    // förbi en spelare — de hamnar bakom och får köra ikapp på riktigt.
+    const human = active.find(([c]) => c.owner !== null);
+    const [leadCar, leadP] = human || active[0];
     const humans = this.ctx.allCars.filter(c => c.owner !== null && !c.disposed);
     const seen = (x, zz, lim) => humans.some(h => Math.hypot(h.pos.x - x, h.pos.z - zz) < lim);
     const o = {};
     let warps = 0;
-    for (let i = 7; i < active.length && warps < 2; i++) {
+    for (let i = 1; i < active.length && warps < 2; i++) {
       const [c, p] = active[i];
       if (c.owner !== null || c.wrecked) continue;
-      if (leadP.travel - p.travel < 500) continue;
+      if (leadP.travel - p.travel < 500) continue; // bara de som ligger långt BAKOM ankaret
       if (p.warpT != null && r.t - p.warpT < 6) continue;
       if (seen(c.pos.x, c.pos.z, 300)) continue;
       for (const off of [110, 170, 240, 320, 420]) {
