@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=18';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=18';
-import { buildWorld, pathPointAt } from './world.js?v=18';
-import { RaceManager, nearestParam } from './race.js?v=18';
-import { Bots } from './ai.js?v=18';
-import { Traffic } from './traffic.js?v=18';
-import { Hud } from './hud.js?v=18';
+import { CONF, CARS, PROTO } from './config.js?v=19';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=19';
+import { buildWorld, pathPointAt } from './world.js?v=19';
+import { RaceManager, nearestParam } from './race.js?v=19';
+import { Bots } from './ai.js?v=19';
+import { Traffic } from './traffic.js?v=19';
+import { Hud } from './hud.js?v=19';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -56,6 +56,11 @@ export class HostGame {
         }
       },
       onBoom: (car) => this.net?.broadcast({ t: 'boom', id: car.id }),
+      onWheelBreak: (car, i, pos) => {
+        const d = Math.hypot(pos.x - this.player.pos.x, pos.z - this.player.pos.z);
+        if (d < 70) this.app.audio.crash(0.35);
+        if (car.owner !== null) this.notify(car, 'toast', 'Framhjulet är trasigt — bilen drar! (X = ny bil)');
+      },
       onSpawnCar: (car) => this.broadcastSpawn(car),
       onDespawnCar: (car) => this.net?.broadcast({ t: 'despawn', id: car.id }),
     };
@@ -68,6 +73,7 @@ export class HostGame {
       fillBots: (zone, n) => this.bots.fillRace(zone, n),
       applyVariant: () => this.applyVotedVariant(),
       restaged: (car, z, i) => this.bots.restage(car, z, i),
+      refreshBot: (car) => this.bots.refresh(car),
     };
     this.raceMgr = new RaceManager(rmCtx, this.worldApi.zones);
     this.ctx.raceMgr = this.raceMgr;
@@ -253,6 +259,7 @@ export class HostGame {
         (c.wrecked ? 1 : 0) | (c.exploded ? 2 : 0) | (c.turboT > 0 ? 4 : 0),
         c.partMask(), c.wheelMask(), Math.round(c.score),
         st ? (st.mode === 'race' ? [1, Math.round(st.dist / 100), Math.round(st.total / 100), st.place, st.n] : [2, st.kvar, Math.round(st.t)]) : 0,
+        c.brokenMask(),
       ];
     });
     const props = [];

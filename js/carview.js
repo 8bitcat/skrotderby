@@ -1,8 +1,8 @@
 // Gästens bild av en bil: interpolerar värdens snapshots, släpper delar visuellt
 // och röker/brinner utifrån hälsoflaggorna. Ingen fysik körs här.
 import * as THREE from 'three';
-import { CARS } from './config.js?v=18';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=18';
+import { CARS } from './config.js?v=19';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=19';
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
@@ -62,6 +62,7 @@ export class CarView {
       for (const m of this.bodyMeshes) m.material.color?.setHex(0x181818);
     }
     this.applyMasks(row[12], row[13]);
+    this.brokenMask = row[16] || 0;
     this.score = row[14] || 0;
     this.status = row[15];
   }
@@ -131,6 +132,11 @@ export class CarView {
       if (w.holder.parent !== this.group) continue;
       w.holder.rotation.y = w.steered ? this.steer : 0;
       w.spin.rotation.x = -this.spin;
+      const idx = this.wheels.indexOf(w);
+      if (this.brokenMask & (1 << idx)) {
+        w.holder.rotation.z = Math.sin(this.spin) * 0.16;
+        w.holder.rotation.y += Math.sin(this.spin * 0.5 + 1) * 0.1;
+      } else w.holder.rotation.z = 0;
     }
 
     if (particles && this.group.visible) {

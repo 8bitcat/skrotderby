@@ -1,9 +1,9 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, BOT_NAMES, AI_NIVAER } from './config.js?v=18';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=18';
-import { pathPointAt } from './world.js?v=18';
+import { CARS, CONF, BOT_NAMES, AI_NIVAER } from './config.js?v=19';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=19';
+import { pathPointAt } from './world.js?v=19';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -41,6 +41,23 @@ export class Bots {
       this._roamTarget(bot);
       this.list.push(bot);
     }
+  }
+
+  // Ny, hel bil för en bot på samma plats (ny slumpad modell) — varje race
+  // börjar med fräscha bottar utan skador från förra loppet
+  refresh(car) {
+    const bot = this.list.find(b => b.car === car);
+    if (!bot || car.disposed) return car;
+    const pos = car.pos.clone();
+    const heading = Math.atan2(-car.fwd.x, -car.fwd.z);
+    const defId = Math.floor(Math.random() * CONF.VALBARA);
+    const def = CARS[defId];
+    car.dispose();
+    pos.y = spawnY(def);
+    const nc = new Car(this.ctx, def, pos, heading, { name: bot.name, defId });
+    this.ctx.onSpawnCar?.(nc);
+    bot.car = nc;
+    return nc;
   }
 
   restage(car, zone, slot) {
@@ -97,6 +114,10 @@ export class Bots {
       } else if (zone.mode === 'race' && freeSlots.length) {
         const g = zone.grid[freeSlots.shift()];
         car.resetTo(new THREE.Vector3(g.pos.x, 1.4, g.pos.z), g.heading);
+        this.raceMgr.enroll(zone, this.refresh(car), false, null);
+        bot.state = 'RACE';
+        placed++;
+        continue;
       } else if (zone.mode === 'race') {
         pathPointAt(zone, zone.total - 26 - placed * 13, this._o);
         car.resetTo(new THREE.Vector3(this._o.x + (placed % 2 ? 3.5 : -3.5), 1.4, this._o.z), Math.atan2(-this._o.tx, -this._o.tz));

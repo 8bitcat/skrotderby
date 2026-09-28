@@ -1,9 +1,9 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF } from './config.js?v=18';
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=18';
-import { pathPointAt } from './world.js?v=18';
+import { CONF } from './config.js?v=19';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=19';
+import { pathPointAt } from './world.js?v=19';
 
 // ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
 export function spotFree(cars, x, z, r = 5.5, except = null) {
@@ -167,7 +167,7 @@ export class Car {
     rb.setAngularDamping(this.sidePress ? 0.45 : 0.8);
 
     // Styrning (mindre utslag i hög fart, men nog för att kontra i sladd)
-    const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.035);
+    const steerMax = def.steerMax / (1 + Math.abs(vFwd) * 0.055);
     const targetSteer = this.input.steer * steerMax;
     this.steerCur += (targetSteer - this.steerCur) * Math.min(1, 9 * dt);
 
@@ -190,7 +190,7 @@ export class Car {
       if (w.detached) continue;
       _a.copy(w.anchorL).applyQuaternion(this.quat).add(this.pos);
       _b.copy(this.up).negate();
-      const maxToi = w.susRest + w.radius;
+      const maxToi = w.susRest + w.radius + (w.broken ? Math.sin(w.spin) * 0.05 : 0);
       this.ray.origin.x = _a.x; this.ray.origin.y = _a.y; this.ray.origin.z = _a.z;
       this.ray.dir.x = _b.x; this.ray.dir.y = _b.y; this.ray.dir.z = _b.z;
       const hit = this.ctx.world.castRay(this.ray, maxToi, true, undefined, undefined, undefined, rb);
@@ -226,13 +226,16 @@ export class Car {
       let longImp = 0;
       if (drive && w.powered) longImp += (drive / nPow) * dt;
       if (brake) longImp += -Math.sign(vF2) * Math.min((brake / 4) * dt, Math.abs(vF2) * def.mass / 4);
-      const capL = def.grip * 1.15 * F * dt * 1.4;
+      const capL = def.grip * 1.15 * F * dt * 1.4 * (w.broken ? 0.6 : 1);
       longImp = Math.max(-capL, Math.min(capL, longImp));
 
       // Lösare bakvagn → bilen driftar istället för att bita fast och välta
       const isRear = w.anchorL.z > 0;
-      let muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 0.84 : 1.0);
+      // Bakvagnen greppar lite MER än fronten ⇒ stabil bil som svänger dit man styr;
+      // vill man sladda drar man handbromsen
+      let muS = (this.input.handbrake && isRear) ? def.grip * 0.3 : def.grip * (isRear ? 1.1 : 1.0);
       if (this.sidePress) muS *= 0.48; // jämsides: man KAN pushas i sidled och snurras
+      if (w.broken) muS *= 0.55;       // trasigt framhjul: bilen drar åt det hållet
       let latImp = -vS * def.mass / 4;
       const capS = muS * F * dt;
       latImp = Math.max(-capS, Math.min(capS, latImp));
@@ -255,12 +258,13 @@ export class Car {
     if (this.grounded && !this.input.handbrake && !this.sidePress && this.absSpeed > 8) {
       const wb = Math.max(1.5, this.wheels[2].anchorL.z - this.wheels[0].anchorL.z);
       const want = (vFwd * Math.tan(this.steerCur)) / wb;          // kinematisk girhastighet
+      const gripYaw = (def.grip * CONF.GRAV * 1.15) / Math.max(5, this.absSpeed); // vad däcken klarar
       const yaw = this.angv.dot(this.up);
-      const lim = Math.abs(want) + 0.35;
+      const lim = Math.min(Math.abs(want), gripYaw) + 0.12;
       if (Math.abs(yaw) > lim) {
         const excess = yaw - Math.sign(yaw) * lim;
         const I = def.mass * (def.dims.l * def.dims.l + def.dims.w * def.dims.w) / 12;
-        const k = Math.min(1, 6 * dt) * excess * I;
+        const k = Math.min(1, 12 * dt) * excess * I;
         rb.applyTorqueImpulse({ x: -this.up.x * k, y: -this.up.y * k, z: -this.up.z * k }, true);
       }
     }
@@ -295,7 +299,10 @@ export class Car {
       const c = cands[s], dmg = amount * shares[s];
       if (c.wheel) {
         c.w.health -= dmg;
-        if (c.w.health <= 0) this.detachWheel(c.i);
+        if (c.w.health <= 0) {
+          if (c.w.steered) this.breakWheel(c.i); // framhjulen sitter kvar men går sönder
+          else this.detachWheel(c.i);
+        }
       } else {
         c.p.health -= dmg;
         if (c.p.health <= 0) this.detachPart(c.p);
@@ -394,6 +401,16 @@ export class Car {
       w.holder.position.set(w.anchorL.x, w.anchorL.y - (w.visLen - w.radius), w.anchorL.z);
       w.holder.rotation.y = w.steered ? this.steerCur : 0;
       w.spinMesh.rotation.x = -w.spin; // framåt = toppen rör sig mot −z
+      if (w.broken) {
+        // skevt, vobblande hjul — vobblet följer hjulets varv
+        w.holder.rotation.z = Math.sin(w.spin) * 0.16;
+        w.holder.rotation.y += Math.sin(w.spin * 0.5 + 1) * 0.1;
+        if (w.grounded && this.absSpeed > 8 && Math.random() < dt * 14) {
+          _a.copy(w.anchorL).applyQuaternion(this.quat).add(this.pos);
+          _a.y -= w.visLen;
+          this.ctx.particles.sparks(_a, 3, 0xffc070, 4);
+        }
+      } else w.holder.rotation.z = 0;
     }
 
     const frac = this.health / this.maxHealth;
@@ -419,7 +436,7 @@ export class Car {
       if (!this.exploded && this.deadT > 1.6) {
         this.exploded = true;
         for (const p of this.parts) if (p.attached) this.detachPart(p, 6);
-        for (let i = 0; i < 4; i++) this.detachWheel(i, 4);
+        this.wheels.forEach((w, i) => { if (!w.steered) this.detachWheel(i, 4); });
         for (const m of this.bodyMeshes) m.material.color?.setHex(0x181818);
         this.body.applyImpulse({ x: 0, y: this.def.mass * 4.5, z: 0 }, true);
         this.ctx.particles.sparks(this.pos, 60, 0xffaa33, 14);
@@ -453,6 +470,22 @@ export class Car {
   partMask() {
     let m = 0;
     this.parts.forEach((p, i) => { if (p.attached) m |= (1 << i); });
+    return m;
+  }
+
+  breakWheel(i) {
+    const w = this.wheels[i];
+    if (!w || w.broken || w.detached) return;
+    w.broken = true;
+    w.radius *= 0.8; // punktering: hörnet sjunker
+    _a.copy(w.anchorL).applyQuaternion(this.quat).add(this.pos);
+    this.ctx.particles.sparks(_a, 18, 0xffb347, 7);
+    this.ctx.onWheelBreak?.(this, i, _a);
+  }
+
+  brokenMask() {
+    let m = 0;
+    this.wheels.forEach((w, i) => { if (w.broken) m |= (1 << i); });
     return m;
   }
 
