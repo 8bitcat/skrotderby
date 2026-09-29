@@ -2,10 +2,10 @@
 // interpolerar bilarna, gör lokal ballistik för delar som flyger av,
 // och skickar sin input till värden.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO, SHOP } from './config.js?v=23';
-import { buildWorld, stepGates } from './world.js?v=23';
-import { CarView, equipFromMask } from './carview.js?v=23';
-import { Hud } from './hud.js?v=23';
+import { CONF, CARS, PROTO, SHOP } from './config.js?v=24';
+import { buildWorld, stepGates } from './world.js?v=24';
+import { CarView, equipFromMask } from './carview.js?v=24';
+import { Hud } from './hud.js?v=24';
 
 const _v = new THREE.Vector3();
 
@@ -250,7 +250,11 @@ export class ClientGame {
     }
     const renderT = (performance.now() / 1000) + (this.timeOffset ?? 0) - 0.13;
 
-    for (const v of this.views.values()) v.update(dt, renderT, this.app.particles);
+    const camp = this.app.camera.position;
+    for (const v of this.views.values()) {
+      v.setLOD((v.pos.x - camp.x) ** 2 + (v.pos.z - camp.z) ** 2 > 95 * 95);
+      v.update(dt, renderT, this.app.particles);
+    }
 
     this.worldApi.zones.forEach((z, i) => {
       z.gatesOpen = ((this.zr[i] || 0) & 2) !== 0;

@@ -1,10 +1,10 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF, SHOP } from './config.js?v=23';
+import { CONF, SHOP } from './config.js?v=24';
 const CONF_SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=23';
-import { pathPointAt } from './world.js?v=23';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite, makeProxy } from './carstyles.js?v=24';
+import { pathPointAt } from './world.js?v=24';
 
 // ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
 export function spotFree(cars, x, z, r = 5.5, except = null) {
@@ -137,9 +137,22 @@ export class Car {
       this.label.position.set(0, this.def.dims.h + 0.9, 0);
       this.group.add(this.label);
     }
+    // LOD-proxy för fjärran bilar (spelarens egen bil visar alltid detalj)
+    this._detail = [...this.group.children];
+    this.proxy = makeProxy(this.def);
+    this.proxy.visible = false;
+    this.group.add(this.proxy);
+    this._lodFar = false;
     this.group.position.copy(this.pos);
     this.group.quaternion.copy(this.quat);
     this.ctx.scene.add(this.group);
+  }
+
+  setLOD(far) {
+    if (far === this._lodFar || this.isPlayer) return;
+    this._lodFar = far;
+    for (const o of this._detail) if (o !== this.label) o.visible = !far;
+    this.proxy.visible = far;
   }
 
   velAt(p, out) {
@@ -476,6 +489,8 @@ export class Car {
     this.body.setRotation({ x: _q.x, y: _q.y, z: _q.z, w: _q.w }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.pos.set(pos.x, pos.y, pos.z); // uppdatera direkt (annars ser platsval stale pos)
+    this.quat.copy(_q);
     this.steerCur = 0; this.flipT = 0;
   }
 

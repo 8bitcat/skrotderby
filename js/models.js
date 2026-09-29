@@ -5,7 +5,7 @@
 // modellens egen geometri, så det är den riktiga bilen som går sönder.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CARS } from './config.js?v=23';
+import { CARS } from './config.js?v=24';
 
 // Hjulcentrum ligger så här långt under fjädringsankaret i vila
 // (susRest 0.42 − kompression g/(4·26) ≈ 0.13).

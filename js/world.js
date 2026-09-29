@@ -2,9 +2,9 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=23';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=23';
-import { PROPS } from './models.js?v=23';
+import { CONF, CARS } from './config.js?v=24';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=24';
+import { PROPS } from './models.js?v=24';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -438,18 +438,21 @@ export function buildWorld(ctx) {
     fixedBox(ctx, BX, 3.4, pz, 0.8, 3.4, 0.8);
   }
 
-  // Depåficka (öppen söderut mot lobbyn)
-  fixedBox(ctx, SX - 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
-  fixedBox(ctx, SX + 23, 0.8, HZ - 32, 0.4, 0.8, 19.5);
-  addPocketWalls(scene, [
-    [SX - 23, HZ - 32, 0.8, 39],
-    [SX + 23, HZ - 32, 0.8, 39],
-  ]);
-  const raceGates = makeGateRow(ctx, scene, [-20, -12, -4, 4, 12, 20].map(dx => ({ x: SX + dx, z: HZ - 12.6, yaw: 0 })), 4);
+  // === STARTGRID BAKOM STARTLINJEN, PÅ BANAN ===
+  // Alla köar bakom linjen (öster om SX) och startar rakt framåt (-x) — ingen
+  // sidoinkörning. 80 rutor: 8 kolumner tvärs banan × 10 led bakåt.
+  const GRID_COLS = 8, GRID_ROWS = 10;
   const raceGrid = [];
-  for (const zz of [HZ - 48, HZ - 40, HZ - 32, HZ - 24, HZ - 16]) for (const dx of [-18, -10.8, -3.6, 3.6, 10.8, 18]) {
-    raceGrid.push({ pos: new THREE.Vector3(SX + dx, 0, zz), heading: Math.PI }); // 30 rutor
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      const gx = SX + 12 + row * 9;                          // längre bak = större x
+      const dz = (col - (GRID_COLS - 1) / 2) * 4.6;          // tvärs banan
+      raceGrid.push({ pos: new THREE.Vector3(gx, 0, trackZ(gx) + dz), heading: Math.PI / 2 }); // face -x
+    }
   }
+  // Grindar tvärs banan vid startlinjen
+  const raceGates = makeGateRow(ctx, scene,
+    [-16, -8, 0, 8, 16].map(dz => ({ x: SX, z: trackZ(SX) + dz, yaw: Math.PI / 2 })), 4.6);
 
   // === TYDLIG STARTFÅLLA: målad yta + ledfyr + pilar från lobbyn ===
   const beacons = [];
@@ -464,16 +467,18 @@ export function buildWorld(ctx) {
     c.textAlign = 'center';
     c.save(); c.translate(256, 470); c.fillText('STARTFÅLLA', 0, 0); c.restore();
   });
+  const gridMidX = SX + 12 + (GRID_ROWS - 1) * 9 / 2;
   const falla = new THREE.Mesh(
-    new THREE.PlaneGeometry(46, 41),
+    new THREE.PlaneGeometry(GRID_ROWS * 9 + 14, W - 2),
     new THREE.MeshBasicMaterial({ map: fallaTex, transparent: true, depthWrite: false })
   );
   falla.rotation.x = -Math.PI / 2;
-  falla.position.set(SX, 0.048, HZ - 32.5);
+  falla.position.set(gridMidX, 0.048, trackZ(gridMidX));
   scene.add(falla);
-  beacons.push(makeBeacon(scene, SX, HZ - 32, 0xffa02e));
-  makeArch(ctx, scene, SX, HZ - 53, Math.PI, '⬇ STARTFÅLLA — STÄLL DIG HÄR ⬇', 24);
-  makeChevronTrail(scene, chevrons, [[LC.x - 28, LC.z + 14], [6495, 40], [6470, 62], [SX, HZ - 60]], 9);
+  beacons.push(makeBeacon(scene, gridMidX, trackZ(gridMidX), 0xffa02e));
+  makeArch(ctx, scene, SX + 4, trackZ(SX + 4), Math.PI / 2, '⬇ STARTGRID — KÖ UPP BAKOM LINJEN ⬇', W / 2 + 1);
+  // pilar från lobbyn upp till grinden
+  makeChevronTrail(scene, chevrons, [[LC.x, LC.z + 30], [SX + 60, HZ - 30], [gridMidX, trackZ(gridMidX)]], 8);
 
   // Derby-fållan får samma hjälp
   beacons.push(makeBeacon(scene, AC.x - AR - 13, AC.z, 0xff5a3c));
@@ -483,8 +488,8 @@ export function buildWorld(ctx) {
     id: 'race', namn: 'LÅNGRACET', mode: 'race',
     pts: racePts, cum: racePath.cum, total: racePath.total,
     width: W, raceDist: CONF.RACE_DIST, maxT: CONF.RACE_MAX_T,
-    staging: { x0: SX - 22, x1: SX + 22, z0: HZ - 52, z1: HZ - 13 },
-    entry: new THREE.Vector3(SX, 0, HZ - 64),
+    staging: { x0: SX + 2, x1: SX + 12 + GRID_ROWS * 9 + 14, z0: HZ - W / 2 - 4, z1: HZ + W / 2 + 4 },
+    entry: new THREE.Vector3(SX + 40, 0, HZ),
     grid: raceGrid, gates: raceGates, gatesOpen: false, race: null, extraGateT: 0,
   };
 
@@ -664,9 +669,9 @@ export function buildWorld(ctx) {
 
   // ============ BANVARIANTER — röstas fram, allt efter grindarna byts ============
   const variants = [
-    { namn: 'KLASSIKERN', trafik: 7, tagPeriod: 80, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
-    { namn: 'TRAFIKKAOS', trafik: 12, tagPeriod: 48, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
-    { namn: 'RAMPFESTEN', trafik: 4, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
+    { namn: 'KLASSIKERN', trafik: 20, tagPeriod: 80, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
+    { namn: 'TRAFIKKAOS', trafik: 44, tagPeriod: 48, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
+    { namn: 'RAMPFESTEN', trafik: 14, tagPeriod: 95, meshes: [], fixed: [], props: [], boostPads: [], avoid: [] },
   ];
   const vMesh = (v, m) => { scene.add(m); v.meshes.push(m); return m; };
   const vFixed = (v, x, y, z, hx, hy, hz, yaw = 0, noDmg = false, rotX = 0, rotZ = 0, frict = 0.4) => {

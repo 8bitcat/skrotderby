@@ -4,7 +4,7 @@
 // varje modell bär sitt racenummer. Delas av värdens fysikbilar och gästvyer —
 // parts[]-ORDNINGEN måste vara identisk överallt (nätets bitmask).
 import * as THREE from 'three';
-import { CONF } from './config.js?v=23';
+import { CONF } from './config.js?v=24';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -521,6 +521,25 @@ function addEquipment(def, group, bodyMeshes, equip, B) {
     hf.rotation.x = -Math.PI / 2; hf.position.set(0, topY + 0.02, frontZ + l * 0.24); add(hf);
   }
   void midY;
+}
+
+// Enkel proxy för fjärran bilar (LOD) — bara två lådor, delar material
+const _proxyMat = new Map();
+function proxyMats(color) {
+  let m = _proxyMat.get(color);
+  if (!m) { m = { body: new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.3 }), glass: new THREE.MeshStandardMaterial({ color: 0x0a1016, roughness: 0.3 }) }; _proxyMat.set(color, m); }
+  return m;
+}
+export function makeProxy(def) {
+  const { l, w, h } = def.dims;
+  const g = new THREE.Group();
+  const M = proxyMats(def.color);
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, l * 0.98), M.body);
+  lower.position.y = -h * 0.1; lower.castShadow = true;
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, h * 0.5, l * 0.5), M.glass);
+  cab.position.set(0, h * 0.28, l * 0.02);
+  g.add(lower, cab);
+  return g;
 }
 
 // ---------- Hela bilen ----------

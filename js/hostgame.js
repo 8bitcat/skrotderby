@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=23';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=23';
-import { buildWorld, pathPointAt } from './world.js?v=23';
-import { RaceManager, nearestParam } from './race.js?v=23';
-import { Bots } from './ai.js?v=23';
-import { Traffic } from './traffic.js?v=23';
-import { Hud } from './hud.js?v=23';
+import { CONF, CARS, PROTO } from './config.js?v=24';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=24';
+import { buildWorld, pathPointAt } from './world.js?v=24';
+import { RaceManager, nearestParam } from './race.js?v=24';
+import { Bots } from './ai.js?v=24';
+import { Traffic } from './traffic.js?v=24';
+import { Hud } from './hud.js?v=24';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -721,7 +721,12 @@ export class HostGame {
     }
     this._prevTL = tl;
 
-    for (const c of this.ctx.allCars) c.update(dt);
+    const camp = this.app.camera.position;
+    const LOD2 = 95 * 95;
+    for (const c of this.ctx.allCars) {
+      c.setLOD((c.pos.x - camp.x) ** 2 + (c.pos.z - camp.z) ** 2 > LOD2);
+      c.update(dt);
+    }
     this.updateLoose(dt);
     this.updateProps();
     this.worldApi.updateVisuals(dt, this.simT);

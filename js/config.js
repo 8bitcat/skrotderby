@@ -1,6 +1,6 @@
 // SKROTDERBY — global konfiguration + bildefinitioner
 // PROTO bumpas vid varje släpp: styr publika rummets namn + nätkompatibilitet.
-export const PROTO = 23;
+export const PROTO = 24;
 export const CONF = {
   GRAV: 13.5,
   DT: 1 / 60,
@@ -36,9 +36,9 @@ export const CONF = {
   COMEBACK_T: 4,
   CLOSE_AFTER_WIN: 20,     // racet stänger 20 s efter att ettan gått i mål
   RESTAGE_WAIT: 10,       // … och nästa start går 10 s efter det (≤30 s efter ettan)
-  FILL_MIN: 24,           // 24 bilar i varje race — fylls på under hela loppet
+  FILL_MIN: 80,           // 80 bilar i varje race
 
-  BOTS: 24,
+  BOTS: 80,
 
   // Världen & banan — MEGA-raksträcka (~13 km ≈ 5 min i full gas)
   WORLD: { WX: 7150, WZ: 700 },
@@ -54,7 +54,7 @@ export const CONF = {
   DMG_WALL_MULT: 0.85,
 
   VALBARA: 6,             // bara de första 6 bilarna går att välja (resten är trafik)
-  TRAFIK_MAX: 9,          // civilbilar på banan samtidigt
+  TRAFIK_MAX: 28,         // mycket mer civiltrafik
   TRAIN_X_KM: 8.5,        // järnvägskorsningen ligger 8,5 km in på rakan
   BRIDGE_X_KM: 5,         // motorvägsbron
 };

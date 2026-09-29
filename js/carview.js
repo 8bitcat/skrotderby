@@ -1,9 +1,9 @@
 // Gästens bild av en bil: interpolerar värdens snapshots, släpper delar visuellt
 // och röker/brinner utifrån hälsoflaggorna. Ingen fysik körs här.
 import * as THREE from 'three';
-import { CARS, SHOP } from './config.js?v=23';
+import { CARS, SHOP } from './config.js?v=24';
 export const equipFromMask = (m) => SHOP.filter((it, i) => m & (1 << i)).map(it => it.id);
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=23';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite, makeProxy } from './carstyles.js?v=24';
 
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
@@ -35,6 +35,12 @@ export class CarView {
       this.label.position.set(0, def.dims.h + 0.9, 0);
       this.group.add(this.label);
     }
+    this.isMine = isMine;
+    this._detail = [...this.group.children];
+    this.proxy = makeProxy(def);
+    this.proxy.visible = false;
+    this.group.add(this.proxy);
+    this._lodFar = false;
     scene.add(this.group);
     this.group.visible = false;
 
@@ -170,6 +176,13 @@ export class CarView {
         }
       }
     }
+  }
+
+  setLOD(far) {
+    if (far === this._lodFar || this.isMine) return;
+    this._lodFar = far;
+    for (const o of this._detail) if (o !== this.label) o.visible = !far;
+    this.proxy.visible = far;
   }
 
   dispose() {
