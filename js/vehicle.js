@@ -1,10 +1,10 @@
 // Fysikbil (körs bara på värden). Custom raycast-fjädring + däckkrafter ovanpå Rapier,
 // så att enskilda hjul kan slitas loss och bilen ändå fortsätter gå att köra.
 import * as THREE from 'three';
-import { CONF, SHOP } from './config.js?v=22';
+import { CONF, SHOP } from './config.js?v=23';
 const CONF_SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
-import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=22';
-import { pathPointAt } from './world.js?v=22';
+import { buildCarVisual, buildWheelMesh, wheelAnchors, makeNameSprite } from './carstyles.js?v=23';
+import { pathPointAt } from './world.js?v=23';
 
 // ---------- Säkra platser: ingen ska spawna/lyftas ovanpå en annan bil ----------
 export function spotFree(cars, x, z, r = 5.5, except = null) {

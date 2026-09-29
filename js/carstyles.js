@@ -4,7 +4,7 @@
 // varje modell bär sitt racenummer. Delas av värdens fysikbilar och gästvyer —
 // parts[]-ORDNINGEN måste vara identisk överallt (nätets bitmask).
 import * as THREE from 'three';
-import { CONF } from './config.js?v=22';
+import { CONF } from './config.js?v=23';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -434,66 +434,76 @@ function buildModelCar(def, equip) {
 // ---------- Köpta tillbehör (monteras på bilen, lossnar inte) ----------
 function addEquipment(def, group, bodyMeshes, equip, B) {
   if (!equip || !equip.length) return;
-  const { l, w, h } = def.dims;
+  const { l, w } = def.dims;
   const has = (id) => equip.includes(id);
   const add = (mesh) => { group.add(mesh); bodyMeshes.push(mesh); };
+  // Box i bilens lokala rum (modellens origo sitter nära taket → använd B, inte h)
   const frontZ = B ? B.min.z : -l / 2;
   const backZ = B ? B.max.z : l / 2;
-  const topY = B ? B.max.y : h * 0.5;
-  const botY = B ? B.min.y : -h * 0.4;
+  const topY = B ? B.max.y : def.dims.h * 0.5;
+  const botY = B ? B.min.y : -def.dims.h * 0.45;
+  const H = topY - botY;             // verklig karosshöjd
+  const midY = botY + H * 0.5;       // bältlinje ungefär
+  const beltY = botY + H * 0.42;
+  const groundY = botY + H * 0.12;   // strax över hjulnav
 
   if (has('wedge')) {
-    // Kilplog: bred sluttande plåt från marken upp mot stötfångaren
-    const mat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.4 });
-    const plow = new THREE.Mesh(new RoundedBoxGeometry(w * 1.15, 0.1, 1.1, 2, 0.04), mat);
-    plow.position.set(0, botY + 0.28, frontZ - 0.42);
-    plow.rotation.x = -0.62; // lutar framåt-nedåt
-    plow.castShadow = true;
-    add(plow);
+    // Stor kilplog längst fram — bred triangelblad från marken upp mot huven
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb8bec6, metalness: 0.85, roughness: 0.35 });
+    const shp = new THREE.Shape();
+    shp.moveTo(-w * 0.72, 0); shp.lineTo(w * 0.72, 0); shp.lineTo(w * 0.72, 0.12); shp.lineTo(0, 0.12); shp.lineTo(-w * 0.72, 0.12); shp.closePath();
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(w * 1.45, 0.9, 0.14), mat);
+    blade.position.set(0, beltY - 0.12, frontZ - 0.5);
+    blade.rotation.x = -0.5; // lutar framåt-nedåt som en plog
+    blade.castShadow = true;
+    add(blade);
+    // stödarmar in mot bilen
     for (const sx of [-1, 1]) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 1.1), mat);
-      rib.position.set(sx * w * 0.5, botY + 0.28, frontZ - 0.42);
-      rib.rotation.x = -0.62;
-      add(rib);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.7), plast(0x33383e));
+      arm.position.set(sx * w * 0.4, groundY + 0.15, frontZ - 0.22);
+      add(arm);
     }
+    void shp;
   }
   if (has('bullbar')) {
     const bm = chrome();
-    const barGeo = new THREE.CylinderGeometry(0.055, 0.055, w * 0.82, 10);
-    barGeo.rotateZ(Math.PI / 2);
-    for (const yy of [0.18, -0.06]) { const b = new THREE.Mesh(barGeo, bm); b.position.set(0, botY + 0.35 + yy, frontZ - 0.28); b.castShadow = true; add(b); }
-    for (const sx of [-w * 0.3, 0, w * 0.3]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, h * 0.5, 8), bm); p.position.set(sx, botY + 0.4, frontZ - 0.28); add(p); }
+    const barGeo = new THREE.CylinderGeometry(0.06, 0.06, w * 0.9, 10); barGeo.rotateZ(Math.PI / 2);
+    for (const yy of [beltY + 0.05, beltY - 0.22]) { const b = new THREE.Mesh(barGeo, bm); b.position.set(0, yy, frontZ - 0.32); b.castShadow = true; add(b); }
+    for (const sx of [-w * 0.34, 0, w * 0.34]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, H * 0.5, 8), bm); p.position.set(sx, beltY - 0.08, frontZ - 0.32); add(p); }
   }
   if (has('spikes')) {
-    const sm = new THREE.MeshStandardMaterial({ color: 0xcfd4da, metalness: 0.9, roughness: 0.3 });
-    for (const sx of [-1, 1]) for (const z of [-l * 0.2, 0, l * 0.2]) {
-      const geo = new THREE.ConeGeometry(0.09, 0.5, 7); geo.rotateZ(sx > 0 ? -Math.PI / 2 : Math.PI / 2);
-      const spike = new THREE.Mesh(geo, sm); spike.position.set(sx * w * 0.52, -h * 0.02, z); spike.castShadow = true; add(spike);
+    const sm = new THREE.MeshStandardMaterial({ color: 0xd0d5db, metalness: 0.9, roughness: 0.28 });
+    for (const sx of [-1, 1]) for (const z of [-l * 0.22, 0, l * 0.22]) {
+      const geo = new THREE.ConeGeometry(0.1, 0.55, 7); geo.rotateZ(sx > 0 ? -Math.PI / 2 : Math.PI / 2);
+      const spike = new THREE.Mesh(geo, sm); spike.position.set(sx * (w * 0.5 + 0.12), beltY - 0.05, z); spike.castShadow = true; add(spike);
     }
   }
   if (has('rollcage')) {
-    const cm = plast(0x1b1e22);
-    const tube = (len) => new THREE.CylinderGeometry(0.05, 0.05, len, 8);
-    for (const [x, z] of [[-w * 0.36, backZ * 0.2], [w * 0.36, backZ * 0.2], [-w * 0.36, backZ * 0.6], [w * 0.36, backZ * 0.6]]) {
-      const post = new THREE.Mesh(tube(h * 0.7), cm); post.position.set(x, topY - h * 0.15, z); post.castShadow = true; add(post);
+    const cm = plast(0x14171b);
+    const tube = (len) => new THREE.CylinderGeometry(0.055, 0.055, len, 8);
+    const roofY = topY + 0.02;
+    for (const [x, z] of [[-w * 0.34, frontZ * 0.2], [w * 0.34, frontZ * 0.2], [-w * 0.34, backZ * 0.5], [w * 0.34, backZ * 0.5]]) {
+      const post = new THREE.Mesh(tube(0.5), cm); post.position.set(x, roofY - 0.1, z); post.castShadow = true; add(post);
     }
-    const rail = new THREE.Mesh(tube(w * 0.72), cm); rail.rotation.z = Math.PI / 2; rail.position.set(0, topY + h * 0.18, backZ * 0.4); add(rail);
+    const rail = new THREE.Mesh(tube(w * 0.7), cm); rail.rotation.z = Math.PI / 2; rail.position.set(0, roofY + 0.15, backZ * 0.3); add(rail);
+    const rail2 = new THREE.Mesh(tube(l * 0.4), cm); rail2.rotation.x = Math.PI / 2; rail2.position.set(w * 0.34, roofY + 0.15, backZ * 0.25); add(rail2);
+    const rail3 = rail2.clone(); rail3.position.x = -w * 0.34; add(rail3);
   }
   if (has('bigwing')) {
     const wm = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(def.color).multiplyScalar(0.7).getHex(), metalness: 0.6, roughness: 0.35, clearcoat: 0.6 });
-    const plank = new THREE.Mesh(new RoundedBoxGeometry(w * 1.15, 0.07, 0.42, 2, 0.03), wm);
-    plank.position.set(0, topY + 0.32, backZ - 0.05); plank.rotation.x = -0.14; plank.castShadow = true; add(plank);
+    const plank = new THREE.Mesh(new RoundedBoxGeometry(w * 1.25, 0.08, 0.5, 2, 0.03), wm);
+    plank.position.set(0, topY + 0.4, backZ - 0.02); plank.rotation.x = -0.14; plank.castShadow = true; add(plank);
     for (const sx of [-1, 1]) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.24, 0.5), wm); plate.position.set(sx * w * 0.55, topY + 0.32, backZ - 0.05); add(plate);
-      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.08), plast()); strut.position.set(sx * w * 0.32, topY + 0.16, backZ - 0.05); add(strut);
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.58), wm); plate.position.set(sx * w * 0.6, topY + 0.4, backZ - 0.02); add(plate);
+      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.42, 0.1), plast()); strut.position.set(sx * w * 0.34, topY + 0.2, backZ - 0.02); add(strut);
     }
   }
   if (has('rooflight')) {
-    const bar = new THREE.Mesh(new RoundedBoxGeometry(w * 0.7, 0.12, 0.16, 2, 0.03), plast(0x14171b));
-    bar.position.set(0, topY + 0.12, backZ * 0.15); add(bar);
+    const bar = new THREE.Mesh(new RoundedBoxGeometry(w * 0.78, 0.14, 0.18, 2, 0.03), plast(0x14171b));
+    bar.position.set(0, topY + 0.14, backZ * 0.1); add(bar);
     for (let i = -2; i <= 2; i++) {
-      const li = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.09, 0.05), new THREE.MeshStandardMaterial({ color: 0xfff3c4, emissive: 0xfff3c4, emissiveIntensity: 1.6 }));
-      li.position.set(i * w * 0.13, topY + 0.12, backZ * 0.15 - 0.09); bar.add(li);
+      const li = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.11, 0.06), new THREE.MeshStandardMaterial({ color: 0xfff3c4, emissive: 0xfff3c4, emissiveIntensity: 1.8 }));
+      li.position.set(i * w * 0.15, 0, -0.1); bar.add(li);
     }
   }
   if (has('flames')) {
@@ -507,9 +517,10 @@ function addEquipment(def, group, bodyMeshes, equip, B) {
       c.fill();
     }
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    const hf = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.7, l * 0.3), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.5 }));
-    hf.rotation.x = -Math.PI / 2; hf.position.set(0, topY - h * 0.02, frontZ + l * 0.22); add(hf);
+    const hf = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.8, l * 0.32), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.5 }));
+    hf.rotation.x = -Math.PI / 2; hf.position.set(0, topY + 0.02, frontZ + l * 0.24); add(hf);
   }
+  void midY;
 }
 
 // ---------- Hela bilen ----------
