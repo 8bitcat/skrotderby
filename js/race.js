@@ -2,9 +2,9 @@
 // Varje minut öppnas grindarna för den som står i depåfickan — och man kan
 // alltid köra in mitt i ett pågående race/derby och vara med direkt.
 // CATCH-UP: sämre placering = högre fart, så fältet klumpar ihop sig.
-import { CONF } from './config.js?v=21';
-import { stepGates, pathPointAt } from './world.js?v=21';
-import { spotFree } from './vehicle.js?v=21';
+import { CONF } from './config.js?v=22';
+import { stepGates, pathPointAt } from './world.js?v=22';
+import { spotFree } from './vehicle.js?v=22';
 
 export function nearestParam(zone, p, hint = -1) {
   const pts = zone.pts, n = pts.length;

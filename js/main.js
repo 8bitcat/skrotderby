@@ -1,13 +1,13 @@
 // Uppstart: meny → värd (äger fysiken, öppnar rum) eller gäst (ansluter med kod).
-import { createScene, ChaseCam } from './scene.js?v=21';
-import { Particles } from './particles.js?v=21';
-import { AudioFx } from './audio.js?v=21';
-import { Input } from './input.js?v=21';
-import { Hud } from './hud.js?v=21';
-import { HostGame } from './hostgame.js?v=21';
-import { ClientGame } from './clientgame.js?v=21';
-import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=21';
-import { loadModels } from './models.js?v=21';
+import { createScene, ChaseCam } from './scene.js?v=22';
+import { Particles } from './particles.js?v=22';
+import { AudioFx } from './audio.js?v=22';
+import { Input } from './input.js?v=22';
+import { Hud } from './hud.js?v=22';
+import { HostGame } from './hostgame.js?v=22';
+import { ClientGame } from './clientgame.js?v=22';
+import { HostNet, ClientNet, makeCode, peerAvailable } from './net.js?v=22';
+import { loadModels } from './models.js?v=22';
 
 const hud = new Hud();
 hud.buildMenu();
@@ -99,7 +99,7 @@ async function startClient() {
 // Publik server: alla som öppnar sidan hamnar i samma värld.
 // Finns ingen värd blir du värd; annars ansluter du som gäst.
 // Rummet roteras per version så gamla flikar inte kan blockera nya spelare.
-import { PROTO } from './config.js?v=21';
+import { PROTO } from './config.js?v=22';
 const PUBLIC_CODE = 'PUB' + PROTO;
 
 async function startPublic() {
@@ -175,13 +175,29 @@ hud.el.bsolo.addEventListener('click', () => startHost(false));
 hud.el.bjoin.addEventListener('click', startClient);
 hud.el.codein.addEventListener('keydown', (e) => { if (e.key === 'Enter') startClient(); });
 
+// Auto-kvalitet: sjunker FPS för lågt stängs bloom av och pixelratio sänks,
+// så svagare datorer slutar hacka.
 let last = performance.now();
+let fpsAcc = 0, fpsN = 0, lowStreak = 0, quality = 2;
+function setQuality(q) {
+  if (q === quality) return;
+  quality = q;
+  app.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q >= 2 ? 1.5 : q === 1 ? 1.1 : 0.85));
+  app.bloomOn = q >= 1;
+}
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (game) game.update(dt);
-  composer.render();
+  if (app.bloomOn === false) renderer.render(scene, camera); else composer.render();
   app.input.clearPressed();
+  // FPS-mätning över 1 s
+  if (dt > 0) { fpsAcc += 1 / dt; fpsN++; }
+  if (fpsN >= 45) {
+    const fps = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0;
+    if (fps < 40) { lowStreak++; if (lowStreak >= 2 && quality > 0) setQuality(quality - 1); }
+    else if (fps > 55) { lowStreak = 0; }
+  }
 }
 requestAnimationFrame(loop);

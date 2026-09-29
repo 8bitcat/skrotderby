@@ -2,9 +2,9 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=21';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=21';
-import { PROPS } from './models.js?v=21';
+import { CONF, CARS } from './config.js?v=22';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=22';
+import { PROPS } from './models.js?v=22';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -185,7 +185,7 @@ export function buildWorld(ctx) {
   const LC = CONF.LOBBY, AC = CONF.ARENA, SX = CONF.STAGE_X, AR = 58;
 
   // Mark — högupplöst gräs/sten-PBR
-  const grassPbr = pbr('aerial_grass_rock', WX / 9, WZ / 9, '2k');
+  const grassPbr = pbr('aerial_grass_rock', WX / 9, WZ / 9, '1k');
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WX * 2, WZ * 2),
     new THREE.MeshStandardMaterial({ ...grassPbr, color: 0x8fb573, roughness: 1 })
@@ -212,7 +212,7 @@ export function buildWorld(ctx) {
   const racePath = makePath(racePts);
 
   // Asfalt — högupplöst PBR (u längs banan bakat i UV, v-repeat = 4 tvärs)
-  const asphaltPbr = pbr('asphalt_02', 1, 4, '2k');
+  const asphaltPbr = pbr('asphalt_02', 1, 4, '1k');
   scene.add(buildRibbon(racePts, racePath, W, asphaltPbr));
 
   // Mittstreck

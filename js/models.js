@@ -5,7 +5,7 @@
 // modellens egen geometri, så det är den riktiga bilen som går sönder.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CARS } from './config.js?v=21';
+import { CARS } from './config.js?v=22';
 
 // Hjulcentrum ligger så här långt under fjädringsankaret i vila
 // (susRest 0.42 − kompression g/(4·26) ≈ 0.13).
@@ -62,11 +62,14 @@ export function loadModels() {
   return loading;
 }
 
+function setLoad(txt) { try { const el = document.getElementById('loading'); if (el) { const d = el.firstElementChild || el; d.textContent = txt; } } catch { /* ok */ } }
+
 async function doLoad() {
   const loader = new GLTFLoader();
   const propsJob = loadProps(loader);
   const files = [...new Set(CARS.filter(d => d.model).map(d => d.model.fil))];
   const scenes = new Map();
+  let done = 0;
   await Promise.all(files.map(async (f) => {
     try {
       const g = await loader.loadAsync('models/' + f);
@@ -74,8 +77,10 @@ async function doLoad() {
     } catch (e) {
       console.warn('Bilmodell kunde inte laddas — procedurell bil används:', f, e);
     }
+    setLoad('Laddar bilar … ' + (++done) + '/' + files.length);
   }));
   await propsJob;
+  setLoad('Förbereder bilar …');
   for (const def of CARS) {
     const sc = def.model && scenes.get(def.model.fil);
     if (!sc) continue;

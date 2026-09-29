@@ -1,9 +1,10 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, CONF, BOT_NAMES, AI_NIVAER } from './config.js?v=21';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=21';
-import { pathPointAt } from './world.js?v=21';
+import { CARS, CONF, SHOP, BOT_NAMES, AI_NIVAER } from './config.js?v=22';
+const randomGear = () => { const n = Math.floor(Math.random() * 3); const pool = SHOP.map(s => s.id); const g = []; while (g.length < n && pool.length) g.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]); return g; };
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=22';
+import { pathPointAt } from './world.js?v=22';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -35,7 +36,7 @@ export class Bots {
         name, diff, car: null, state: 'ROAM',
         target: new THREE.Vector3(), timer: rnd(2, 6),
         stuckT: 0, revT: 0, slot: null, zone: null, prey: null, preyT: 0,
-        nT: rnd(0, 10), phase: rnd(0, 6.28),
+        nT: rnd(0, 10), phase: rnd(0, 6.28), gear: randomGear(),
       };
       bot.car = this._newCar(bot);
       this._roamTarget(bot);
@@ -48,13 +49,14 @@ export class Bots {
   refresh(car) {
     const bot = this.list.find(b => b.car === car);
     if (!bot || car.disposed) return car;
+    bot.gear = randomGear();
     const pos = car.pos.clone();
     const heading = Math.atan2(-car.fwd.x, -car.fwd.z);
     const defId = Math.floor(Math.random() * CONF.VALBARA);
     const def = CARS[defId];
     car.dispose();
     pos.y = spawnY(def);
-    const nc = new Car(this.ctx, def, pos, heading, { name: bot.name, defId });
+    const nc = new Car(this.ctx, def, pos, heading, { name: bot.name, defId, equip: bot.gear });
     this.ctx.onSpawnCar?.(nc);
     bot.car = nc;
     return nc;
@@ -138,7 +140,7 @@ export class Bots {
     const sp = freeLobbySpawn(this.world.lobby, this.ctx.allCars, this._spawnI++);
     const pos = sp.pos.clone();
     pos.y = spawnY(def);
-    const car = new Car(this.ctx, def, pos, sp.heading, { name: bot.name, defId });
+    const car = new Car(this.ctx, def, pos, sp.heading, { name: bot.name, defId, equip: bot.gear });
     this.ctx.onSpawnCar?.(car);
     return car;
   }
@@ -165,7 +167,7 @@ export class Bots {
             const f = freeTrackSpot(rd.zone, Math.max(0, rd.param), this.ctx.allCars);
             const def = CARS[defId];
             const nc = new Car(this.ctx, def, new THREE.Vector3(f.x, spawnY(def), f.z),
-              f.heading, { name: bot.name, defId });
+              f.heading, { name: bot.name, defId, equip: bot.gear });
             this.ctx.onSpawnCar?.(nc);
             this.raceMgr.enroll(rd.zone, nc, false, Math.max(0, rd.travel + f.dp));
             bot.car = nc;

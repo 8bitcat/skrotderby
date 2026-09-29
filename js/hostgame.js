@@ -1,13 +1,13 @@
 // Värdens spelloop: äger Rapier-världen, alla bilar (egen, bottar, gäster),
 // skador, race-logik och nätsnapshots.
 import * as THREE from 'three';
-import { CONF, CARS, PROTO } from './config.js?v=21';
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=21';
-import { buildWorld, pathPointAt } from './world.js?v=21';
-import { RaceManager, nearestParam } from './race.js?v=21';
-import { Bots } from './ai.js?v=21';
-import { Traffic } from './traffic.js?v=21';
-import { Hud } from './hud.js?v=21';
+import { CONF, CARS, PROTO } from './config.js?v=22';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn, spotFree } from './vehicle.js?v=22';
+import { buildWorld, pathPointAt } from './world.js?v=22';
+import { RaceManager, nearestParam } from './race.js?v=22';
+import { Bots } from './ai.js?v=22';
+import { Traffic } from './traffic.js?v=22';
+import { Hud } from './hud.js?v=22';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -694,7 +694,8 @@ export class HostGame {
       this.simT += CONF.DT;
     }
 
-    this.scrapeScan();
+    this._scrapeT = (this._scrapeT || 0) + 1;
+    if (this._scrapeT % 2 === 0) this.scrapeScan();
     this.bots.update(dt);
     this.traffic.update(dt);
     this.raceMgr.update(dt);
