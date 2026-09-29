@@ -3,9 +3,9 @@
 // (eller kring startområdet när inget race pågår) och återvinns när de
 // hamnat för långt bort. Kör man sönder dem ger det skrotpoäng.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=24';
-import { Car, spawnY } from './vehicle.js?v=24';
-import { trackZ, laneYaw } from './world.js?v=24';
+import { CONF, CARS } from './config.js?v=25';
+import { Car, spawnY } from './vehicle.js?v=25';
+import { trackZ, laneYaw } from './world.js?v=25';
 
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
 

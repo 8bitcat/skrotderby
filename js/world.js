@@ -2,9 +2,9 @@
 // skrotarena, väggar hela vägen (adaptivt sammanslagna segment), curbs,
 // kantlinjer, träd, km-skyltar. Grafik alltid — kolliders bara hos värden.
 import * as THREE from 'three';
-import { CONF, CARS } from './config.js?v=24';
-import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=24';
-import { PROPS } from './models.js?v=24';
+import { CONF, CARS } from './config.js?v=25';
+import { buildCarVisual, buildWheelMesh, wheelAnchors } from './carstyles.js?v=25';
+import { PROPS } from './models.js?v=25';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
@@ -13,13 +13,16 @@ const hash = (i) => ((Math.sin(i * 127.31) * 43758.5453) % 1 + 1) % 1;
 export function swayAt(x) {
   const S = CONF.TRACK.SWAY, SX = CONF.STAGE_X, HX = CONF.TRACK.HX, R = CONF.TRACK.R;
   const edge = Math.max(0, Math.min(1, (HX - R - Math.abs(x)) / 40 + 0.001));
-  let z = 0; for (const s of S) z += s.amp * Math.sin((x - SX) / s.len + (s.ph || 0));
-  return z * edge;
+  // Rakt och centrerat kring start/mål så startgriden alltid ligger rätt (sin=0 vid SX)
+  const startFade = Math.max(0, Math.min(1, (SX - x) / 700));
+  const finishFade = Math.max(0, Math.min(1, (x - (SX - CONF.RACE_DIST)) / 700));
+  let z = 0; for (const s of S) z += s.amp * Math.sin((x - SX) / s.len);
+  return z * edge * startFade * finishFade;
 }
 export function trackZ(x) { return CONF.TRACK.HZ + swayAt(x); }
 export function laneYaw(x) {
   const S = CONF.TRACK.SWAY, SX = CONF.STAGE_X;
-  let d = 0; for (const s of S) d += (s.amp / s.len) * Math.cos((x - SX) / s.len + (s.ph || 0));
+  let d = 0; for (const s of S) d += (s.amp / s.len) * Math.cos((x - SX) / s.len);
   return -Math.atan2(d, 1);
 }
 
@@ -446,7 +449,7 @@ export function buildWorld(ctx) {
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
       const gx = SX + 12 + row * 9;                          // längre bak = större x
-      const dz = (col - (GRID_COLS - 1) / 2) * 4.6;          // tvärs banan
+      const dz = (col - (GRID_COLS - 1) / 2) * 3.9;          // tvärs banan (inte ända ut mot väggen)          // tvärs banan
       raceGrid.push({ pos: new THREE.Vector3(gx, 0, trackZ(gx) + dz), heading: Math.PI / 2 }); // face -x
     }
   }

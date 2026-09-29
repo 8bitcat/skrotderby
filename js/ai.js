@@ -1,7 +1,7 @@
 // Bot-förare: strosar i lobbyn, ställer upp bakom grindarna när starten närmar sig,
 // följer banan i race (med catch-up-fart) och rammar närmsta offer i derbyt.
 import * as THREE from 'three';
-import { CARS, CONF, SHOP, BOT_NAMES, AI_NIVAER } from './config.js?v=24';
+import { CARS, CONF, SHOP, BOT_NAMES, AI_NIVAER } from './config.js?v=25';
 // Bottar bär alltid MINST en synlig pryl (plog/båge/vinge/lyktor) + ev. en till
 const VISIBLE = ['wedge', 'bullbar', 'bigwing', 'rooflight', 'spikes'];
 const randomGear = () => {
@@ -10,8 +10,8 @@ const randomGear = () => {
   if (Math.random() < 0.55) g.push(pool[Math.floor(Math.random() * pool.length)]);
   return g;
 };
-import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=24';
-import { pathPointAt } from './world.js?v=24';
+import { Car, spawnY, freeTrackSpot, freeLobbySpawn } from './vehicle.js?v=25';
+import { pathPointAt } from './world.js?v=25';
 
 const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
 const clamp01 = (x) => Math.max(0, Math.min(1, x));

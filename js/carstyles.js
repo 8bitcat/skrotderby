@@ -4,7 +4,7 @@
 // varje modell bär sitt racenummer. Delas av värdens fysikbilar och gästvyer —
 // parts[]-ORDNINGEN måste vara identisk överallt (nätets bitmask).
 import * as THREE from 'three';
-import { CONF } from './config.js?v=24';
+import { CONF } from './config.js?v=25';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -428,6 +428,7 @@ function buildModelCar(def, equip) {
     addPart('ljusramp', ramp, 0, B.max.y + 0.06, rf ? rf.center.z - rf.size.z * 0.3 : -l * 0.05, w * 0.52, 0.1, 0.16, 12);
   }
 
+  addEquipment(def, group, bodyMeshes, equip, B);
   return { group, parts, bodyMeshes };
 }
 
